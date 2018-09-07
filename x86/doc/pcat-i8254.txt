@@ -1,0 +1,31 @@
+      +---u---+
+  D7 -+       +-Vcc
+  D6 -+       +-WR#
+  D5 -+       +-RD#
+  D4 -+       +-CS#
+  D3 -+       +-A1
+  D2 -+ 8254  +-A0
+  D1 -+       +-CLK2
+  D0 -+       +-OUT2
+CLK0 -+       +-GATE2
+OUT0 -+       +-CLK1
+GATE0-+       +-GATE1
+GND  -+       +-OUT1
+      +-------+
+
+CLK0-2 入力
+GATE0-2 入力
+OUT0-2 出力
+
+A0 A1
+0  0	Counter0
+1  0	Counter1
+0  1	Counter2
+1  1	Control Word Register
+
+simple read operation
+ CLKを止めるかGATEによってカウンタをストップ
+しないといけない。そうしない場合不定値
+
+couner latch command
+read-back command

@@ -1,0 +1,2 @@
+CPUARCH	= x86
+GNUARCH = i386-elf

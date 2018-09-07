@@ -1,0 +1,43 @@
+OUTPUT_FORMAT ("elf32-littlearm")
+OUTPUT_ARCH (arm)
+
+MEMORY {
+       vectors	: o = 0x00000000, l = 0x20
+       rom	: o = 0x00000200, l = 0xe00	/* total 4KB */
+       ram	: o = 0x40000000, l = 0x10000	/* 64KB */
+}
+
+SECTIONS {
+	 stack_start = 0x4000fff0;	/* 64KB - 16byte */
+
+	 .vectors :
+	 {
+	 	 *(.vector)
+	 } > vectors
+
+	 .text :
+	 {
+	 	 *(.text*)
+		 *(.rodata*)
+		 . = ALIGN (4);
+	 } > rom
+
+	 rom_data_start = .;
+	 .data :
+	 AT (ADDR (.text) + SIZEOF (.text))
+	 {
+	 	 data_start = .;
+	 	 *(.data*)
+		 . = ALIGN (4);
+		 data_end = .;
+	 } > ram
+	 rom_data_end = rom_data_start + SIZEOF (.data);
+
+	 .bss :
+	 {
+	         bss_start = .;
+	      	 *(.bss*)
+	 } > ram
+	 bss_end = .;
+
+}

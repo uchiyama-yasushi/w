@@ -1,0 +1,180 @@
+x86続き。例外の処理のフレームワークが大体できたので実際の例外を起こして
+チェック。ここまでやるとかなりのQEMUいじめ。QEMUがハンドルできないのは
+<ul>
+<li>DR7のGDビットをたててデバッグレジスタのアクセスで例外#1が発生しない。
+<li>途中でSSを変更してもそのセグメントリミットが反映されない。
+<li>CR0 NEビットを立ててもFPUのエラーで#16を発生しない。
+<li>CR0 AMビットを立ててもアラインメントエラーで#17を発生しない。
+</ul>
+
+実際のところ、どれもまず使わないところだ。
+<br>
+ちまちまフロッピーに乗せて実機でテストしました。
+
+<pre>
+static int bound[2];ここなのは、インラインアセンブラでうまく乗せること
+ができなかったので直接シンボル参照させるため。
+
+uint32_t
+test (int32_t argc, const char *argv[])
+{
+  union descriptor *d;
+  uint32_t r, r0, r1;
+
+  r = r0 = r1 = 0;
+
+  if (argc &lt; 2)
+    {
+      printf ("Specify exception #.\n");
+      return 0;
+    }
+  switch (atoi(argv[1]))
+    {
+    case 0:
+      // Divided by zero
+      __asm volatile ("div %0":: "r"(0));←ここで例外。
+      break;
+    case 1:
+      // debug exception. // QEMU bug.
+      __asm volatile ("movl %0, %%dr7":: "r"(0x2000));	// GD/DR7
+      __asm volatile ("movl %%dr7, %0": "=r"(r)); ←ここで例外。QEMUは素通り。
+      eflags_dump (eflags_get ());
+      break;
+    case 3:
+      // break point
+      __asm volatile ("int $3");
+      break;
+    case 4:
+      // over flow
+      r = eflags_get ();
+      r |= (1 &lt;&lt; 11);	// set OF
+      eflags_set (r);
+      __asm volatile ("into");←ここで例外。
+      break;
+    case 5:
+      // boundary check
+      bound[0] = 3;
+      bound[1] = 6;
+      for (r0 = 3; r0 &lt; 10; r0++)
+	{
+	  printf ("%d\n", r0);
+	  __asm volatile ("bound %0, bound":: "r"(r0)); r0が7になった所で例外。
+	}
+      break;
+    case 6:
+      // Invalid Opcode
+      __asm volatile (".long 0xffffffff");←ここで例外。
+      break;
+    case 7:
+      // extension_not_available
+      // Disable FPU (EM bit of CR0)
+      __asm volatile ("movl %%cr0, %0\n orl $4, %0\n movl %0, %%cr0"::"r"(r));
+      // ESC (Escape to coprocessor instruction set.
+      __asm volatile ("fcos");←ここで例外。
+      break;
+    case 8:
+      // double fault. QEMU bug. (don't reflect segment size change.)
+      {
+	__asm volatile ("movw %0, %%ss":: "r"((uint16_t)GDT_TEST32));
+	GDT_TEST32は現在のESPでは絶対にリミットを外れるものに設定。
+	ここでpushすれば、スタック例外になる(QEMUは素通り)
+	__asm volatile ("ljmp	$0, $0");←ここで例外。
+	このljmpで一般保護例外が起き、その例外処理でスタックにCS,EIP,ErroCode
+	をプッシュするところで、スタック例外が起きてダブルフォルト。
+	QEMUはスタックのリミットを見ていないので、ダブルフォルトでなく
+	一般保護例外になってしまう。
+      }
+      break;
+    case 10:
+      // Invalid TSS
+      {
+	struct tss *tss = tss_get_context (GDT_TSS_USER);
+	tss_call (GDT_GATE_USER);
+	tss->cs = GDT_DATA32;	// causes exception.
+	CSにコードセグメント以外のものを入れてそのTSSに切り替え。
+	tss_call (GDT_GATE_USER);←ここで例外。
+      }
+      break;
+    case 11:
+      // No segment.
+      {
+	union descriptor *d = descriptor (GDT_TEST32);
+	printf ("ok\n");
+	__asm volatile ("movw %0, %%gs":: "r"((uint16_t)GDT_TEST32));
+	d->desc.access_byte &= ~PRESENT;
+	printf ("NG\n");
+	__asm volatile ("movw %0, %%gs":: "r"((uint16_t)GDT_TEST32));←ここで例外。
+      }
+      break;
+    case 12:
+      // Stack fault.
+      {
+	d = descriptor (GDT_TEST32);
+	printf ("ok\n");
+	__asm volatile ("movw %0, %%ss":: "r"((uint16_t)GDT_TEST32));
+	d->desc.access_byte &= ~PRESENT;
+	printf ("NG\n");
+	__asm volatile ("movw %0, %%ss":: "r"((uint16_t)GDT_TEST32));←ここで例外。
+      }
+      break;
+    case 13:
+      // Generic exception
+      __asm volatile ("ljmp	$0, $0");←ここで例外。
+      break;
+    case 14:
+      // Page fault. XXX notyet
+ ページングはしてないのでまだ。しない予定だけれど、アンキャッシュ領域の
+設定に欲しくなるかも?
+      // CR0 PG bit
+      __asm volatile ("movl %%cr0, %0\n orl $0x80000000, %0\n movl %0, %%cr0"::
+		      "r"(r));
+      break;
+    case 16:
+      // Floating point error. QEMU bug.
+      // CR0 NE bit.
+      __asm volatile ("movl %%cr0, %0\n orl $0x20, %0\n movl %0, %%cr0"::"r"(r));
+      {
+	__asm volatile ("fdiv %st, %st(0)");
+	__asm volatile ("wait");←ここで例外。
+	QEMUは素通り。
+      }
+      break;
+    case 17:
+      // Alignment error. QEMU bug.
+      // CR0 AM bit.
+      __asm volatile ("movl %%cr0, %0\n orl $0x40000, %0\n movl %0, %%cr0"::"r"(r));
+      // Change to CPL3 task.
+      この例外は特権レベル3でないと起きないので3のタスクで実行。
+      tss_call (GDT_GATE_APP);←ここの中で例外。
+      QEMUは素通り。
+      break;
+    case 18:
+      // Machine check.
+      break;
+    }
+
+  return 0;
+}
+
+これは#17のアライメントエラーを起させる特権レベル3のタスク。
+void
+user_app ()
+{
+  int i[2];
+
+  while (/*CONSTCOND*/1)
+    {
+      uint32_t r;
+      r = eflags_get ();
+      r |= (1 &lt;&lt; 18);	// set AC (Alignment Check)
+      eflags_set (r);
+      __asm volatile ("movl %0, %%eax":: "g"(i));
+      __asm volatile ("addl $1, %eax");
+      __asm volatile ("movl (%eax), %ecx");←ここで例外。
+      //      __asm volatile ("movw %%cs, %0": "=g"(i));
+      //      __asm volatile ("movw %0, %%ds":: "r"((uint16_t)GDT_DATA32));
+      //      __asm volatile (".long 0xffffffff");
+      __asm volatile ("iret");
+    }
+}
+</pre>

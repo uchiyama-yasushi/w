@@ -1,0 +1,28 @@
+ROOT_DIR	= ../../..
+
+
+include ../../mk/3052.mk
+include ${MK_DIR}/rules.mk
+include ${MK_DIR}/objs.mk
+
+VPATH += ../libud01
+VPATH += ../ud01
+VPATH += ${ROOT_DIR}/filesystem
+VPATH += ${ROOT_DIR}/filesystem/sysvbfs
+CFLAGS += -I${ROOT_DIR}/filesystem
+
+CFLAGS += -DDEBUG -DBFS_DEBUG
+#CFLAGS += -DSCI_SPEED_BRR=13  #57600bps
+#CFLAGS += -DPROCESS_MODE
+
+UD01_OBJS = board.o mmc_spi.o mmc_machdep.o
+UD01_OBJS += bfs.o bfs_init.o sysvbfs_partition_find.o pcat_mbr.o
+
+OBJS = ${OVERLAY_OBJS} ${UD01_OBJS}
+LDSCRIPT_RAM = ${LDSCRIPT_DIR}/ud01.ram
+LDSCRIPT_ROM = ${LDSCRIPT_DIR}/3052.rom
+#LIBS =
+IMPORT_SYMBOL = ../ud01_monitor/ud01_monitor.elf
+
+include ${MK_DIR}/target_overlay.mk
+include ${MK_DIR}/utils.mk

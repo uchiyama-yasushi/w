@@ -1,0 +1,359 @@
+プロテクトモードには
+
+        lgdt    lgdt_arg
+        movl    %cr0,   %eax
+        orl     $0x1,   %eax
+        movl    %eax,   %cr0
+        ljmp    $0x8,   $flush  // Load CS(0x08) with pipeline flush.
+flush:  .code32
+        // Load DS(0x10),ES,FS,GS
+        movw    $0x10,  %ax
+        movw    %ax,    %ds
+        movw    %ax,    %es
+        movw    %ax,    %fs
+        movw    %ax,    %gs
+        // Load SS
+        movw    $0x18,  %ax
+        movw    %ax,    %ss
+
+この入り方しかない。movl %eax, %cr0で、セグメントユニットのアドレス変換機能が変
+わるので、パイプラインに入っているのをフラッシュするのはいいとして、ljmpをどう
+フェッチするかだ。セグメント変換機能は変更されたけれど、 CSはまだ保護モード用に
+変更されてないし、既にリアルモードじゃない。
+これはリアルモードで動いてるうちはプロセッサが自動的に保護モードのセグメントデ
+スクリプタをそれに矛盾のないように更新しているから大丈夫らしい。このljmpの後が
+、gdtで設定したCS。このサンプルコードは、保護モードのCSを設定(リアルモードのオ
+フセット==保護モードのオフセット)してある。
+
+LMSW, SMSW (load/store machine status word)命令は286との互換性のために
+残してある。IA-32では使ってはいけない。MOV命令を使ってCR0にアクセスすること。
+
+
+セグメントの領域を設定するデスクリプタを生成するプログラム。
+
+#include <sys/types.h>
+#include <stdio.h>
+#include <string.h>
+
+typedef int8_t bool;
+
+// Access byte (Lower attribute filed) defines.
+#define	PRESENT			0x80
+
+// DPL
+#define	DPL_MASK		0x60
+
+// S (Descriptor Type) bit
+#define	SEGMENT_SYSTEM		0x00
+#define	SEGMENT_APPLICATION	0x10
+
+// Code/Text Segment.
+#define	APP_CODE		0x08
+#define	APP_DATA		0x00
+/*
+  Data:
+  E Lower extension. (Stack)
+  W Writable
+  A Access
+  Code:
+  C Conforming (omit privileged level check.)
+  R Readable
+  A Access
+*/
+#define	DATA_R			0x00
+#define	DATA_RW			0x02
+#define	DATA_R_STACK		0x04
+#define	DATA_RW_STACK		0x06
+
+// C ... Conforming. omit privileged level check
+#define	CODE_X			0x00
+#define	CODE_RX			0x02
+#define	CODE_XC			0x04
+#define	CODE_RXC		0x06
+
+#define	CODE_SEGMENT	(PRESENT | SEGMENT_APPLICATION | APP_CODE | CODE_RX)
+#define	DATA_SEGMENT	(PRESENT | SEGMENT_APPLICATION | APP_DATA | DATA_RW)
+#define	STACK_SEGMENT	(PRESENT | SEGMENT_APPLICATION | APP_DATA | DATA_RW_STACK)
+
+// Upper Attribute field.
+// Granularity bit
+#define	SIZE_UNIT_4KB		0x80
+#define	SIZE_UNIT_1B		0x00
+// Default bit. application descriptor only.
+#define	CODE_32			0x40
+#define	CODE_16			0x00
+
+// Type filed for System Segment.
+#define	SYS_LDT			0x02
+#define	SYS_TASKGATE		0x05
+#define	SYS_TSS_AVAILABLE	0x09
+#define	SYS_TSS_BUSY		0x0b
+
+#define	SYS_TRAPGATE		0x0f
+#define	SYS_INTRGATE		0x0e
+#define	SYS_CALLGATE		0x0c
+
+struct application_descriptor // including system descriptor
+{
+  uint16_t size_0_15;
+  uint16_t base_0_15;
+  uint8_t base_16_23;
+  uint8_t access_byte;
+  uint8_t size_16_19_GD;
+  uint8_t base_24_31;
+} __attribute ((packed));
+
+/*
+  System descriptor type filed.
+  2 ... LDT
+  5 ... Task gate
+  9 ... 386TSS available
+  b ... 386TSS busy.
+  c ... 386call gate
+  e ... 386intr gate
+  f ... 386trap gate
+ */
+
+struct gate_descriptor // call gate, interrupt gate, trap gate.
+{
+  uint16_t offset_0_15;
+  uint16_t selector;
+  uint8_t parameter_0_4;// dword count.
+  uint8_t access_byte;
+  /*
+    System:
+    P DPL 0 1 1 1 1 trap gate
+    P DPL 0 1 1 1 0 interrupt gate
+    P DPL 0 1 1 0 0 call gate
+    Application:
+    P DPL 1 0 . . . data/stack
+    P DPL 1 1 . . . code
+   */
+  uint16_t offset_16_31;
+} __attribute ((packed));
+
+struct gdt_config
+{
+  uint32_t base;
+  uint32_t size;
+  uint8_t unit;
+  uint8_t mode;
+  uint8_t type;
+} gdt_config [] = {
+  { 0x0,	0x200,	SIZE_UNIT_4KB, CODE_32, CODE_SEGMENT },
+  { 0x0,	0x200,	SIZE_UNIT_4KB, CODE_32, DATA_SEGMENT },
+  { 0x200000,	0x1,	SIZE_UNIT_4KB, CODE_32, STACK_SEGMENT },
+};
+
+struct lgdt_arg
+{
+  uint16_t limit;
+  uint32_t base;
+} __attribute ((packed));
+
+main ()
+{
+  union
+  {
+    struct application_descriptor desc;
+    struct gate_descriptor gate;
+    uint16_t u[4];
+  } descriptor;
+  struct gdt_config *conf = gdt_config;
+  struct application_descriptor *d = &descriptor.desc;
+  int32_t limit;
+  int i, j;
+
+  printf ("\t.arch i486\n");
+
+  // GDT
+  printf ("\t.section .data\n\t.balign 4\n");
+  printf ("\t.global _gdt\n_gdt:\n");
+
+  // Null Descriptor #0
+  for (j = 0; j < 4; j++)
+    printf ("\t.short 0x0000\n");
+
+  // Application Descriptor. (code, data, stack)
+  for (i = 0; i < sizeof gdt_config / sizeof (gdt_config[0]); i++, conf++)
+    {
+      memset (d, 0, sizeof *d);
+      d->access_byte = conf->type;
+      d->base_0_15 = conf->base & 0xffff;
+      d->base_16_23 = (conf->base >> 16) & 0xff;
+      d->base_24_31 = (conf->base >> 24) & 0xff;
+      limit = conf->size;
+      if (conf->type == STACK_SEGMENT)
+	{
+	  limit = -limit;
+	}
+      limit--;
+
+      d->size_0_15 = limit & 0xffff;
+      d->size_16_19_GD = ((limit >> 16) & 0xf) | conf->unit | conf->mode;
+      for (j = 0; j < 4; j++)
+	printf ("\t.short 0x%04x\n", descriptor.u[j]);
+    }
+
+  return 0;
+}
+
+これを
+	lgdt	lgdt_arg
+	movl	%cr0,	%eax
+	orl	$0x1,	%eax
+	movl	%eax,	%cr0
+	ljmp	$0x8,	$flush	// Load CS(0x08) with pipeline flush.
+flush:	.code32
+	// Load DS(0x10),ES,FS,GS
+	movw	$0x10,	%ax
+	movw	%ax,	%ds
+	movw	%ax,	%es
+	movw	%ax,	%fs
+	movw	%ax,	%gs
+	// Load SS
+	movw	$0x18,	%ax
+	movw	%ax,	%ss
+
+	call	c_main
+infinite_loop:
+	jmp	infinite_loop
+
+で保護モードに移行。これでCでプログラムが書けるようになる。(A20の制限はまだあるけれど)
+リアルモードのうちに
+
+	movb	$0x00,	%ah
+	movb	$0x13,	%al	// 320x240 8bit color VRAM 0xa0000 - 0xafa00
+	int	$0x10
+
+のBIOSコールでグラフィックモードにしておいて、
+
+void
+c_main ()
+{
+  uint8_t f[] = {
+/* code 52 (R) */    0x7e,0x41,0x41,0x7e,0x44,0x42,0x41,0x00,
+  };
+  uint8_t (*p)[320] = (void *)0xa0000;
+  int x, y;
+
+  for (y = 0; y < 8; y++)
+    {
+      for (x = 0; x < 8; x++)
+	{
+	  p[y][x] = (f[y] & (1 << (7-x))) ? 7 : 6;
+/* 0 black, 1 blue, 2 green, 3 cyan, 4 red, 5 magenta, 6 orange, 7 white, 8 grey, 9 skyblue */
+	}
+    }
+}
+
+qemu  -serial stdio -std-vga -hda boot1
+
+これで画面に"R"(BGオレンジ、FG白)の文字が書かれる。
+
+
+
+x86続き。保護モードに移行するのをいろいろ試してみた。
+
+例えば二段階目を0x20000にロード。そのリアルモードのプログラムは
+CS,DS,SS=0x2000になるように設定。ここから保護モードに移る。
+
+保護モードのデスクリプタの設定は
+struct gdt_config
+{
+  uint32_t base;
+  uint32_t size;
+  uint8_t unit;
+  uint8_t mode;
+  uint8_t type;
+} gdt_config [] = {
+  { 0x20000,	0x100,	SIZE_UNIT_4KB, CODE_32, CODE_SEGMENT },
+  { 0x20000,	0x100,	SIZE_UNIT_4KB, CODE_32, DATA_SEGMENT },
+  { 0x40000,	0x100,	SIZE_UNIT_4KB, CODE_32, STACK_SEGMENT },
+};
+と、0x20000オフセットしたものに。
+
+lgdtに設定するのはリニアアドレスでないといけないので、0x20000の下駄を。
+
+	.section .data
+	.balign 4
+lgdt_arg:
+	.word	0x1f	// 0, Code, Data, Stack.
+	.long	_gdt + 0x20000
+
+このように移行。
+
+	lgdt	lgdt_arg
+
+	movl	%cr0,	%eax
+	orl	$0x1,	%eax
+	movl	%eax,	%cr0
+	// Load CS(0x08) with pipeline flush.
+//	DATA32	ljmp	$0x08,	$protect_mode_start
+	ljmp	$0x08,	$protect_mode_start
+protect_mode_start:
+	.code32
+
+lgdtは16bitと32bitの二命令がある。それはオペランドの処理の方法で、
+16bit命令の場合(このサンプル)、設定したGDTRのベースに0xffffffがANDされ
+るかどうかだけ。リアルモードから移行する場合は0xffffffを越えることはあ
+りえないので16bit命令でいい。
+
+ljmpは「保護モードのCS」が自動的に更新されているからフェッチできるはず。
+オフセットについて。このljmpで先にロードしたGDTの設定(0x08)をCSにロード
+して、それに基ずいてアドレスを計算する。設定では0x20000がベースになって
+いるので、下駄をはかせる必要はない。
+この状態ではまだCSがロードされてないからDビットは16bitモードだ。
+
+DATA32でオペランドサイズプリフィックスをつけた場合、0x66がついてるので
+オペランドの解釈を32bitモードだとする。(その変換の寄りどころはCPUによって
+自動的に更新されている保護モードのCS)
+ 1af:	66 ea b7 01 00 00 08 	ljmpl  $0x8,$0x1b7	//DATA32あり
+これを32bitとしてオペランドを解釈
+
+つけなかった場合16bitとしてオペランドを解釈。(まだDビットは16bit)
+ 1af:	ea b4 01 08 00       	ljmp   $0x8,$0x1b4
+
+なので、どっちでも同じはず。
+
+そしてその他のセグメントの設定。
+	movw	$0x10,	%ax
+	movw	%ax,	%ds
+	// Load SS
+#if 1
+	movw	$0x18,	%ax
+	movw	%ax,	%ss
+	// Reset stack pointer.
+	movl	$0,	%esp
+	movl	$0,	%ebp
+#else
+	movw	%ax,	%ss
+	// Reset stack pointer.
+	movl	$0xfff0,	%esp
+#endif
+
+スタックセグメントの設定は、インテルが想定していた設定はベースにスタッ
+クの最大アドレスを設定して、ESPは0からはじまってマイナスに伸張するもの。
+(上のコードの#if 1)、これだと同じアドレスでもデータセグメントからと
+スタックセグメントからでポインタが異なる。
+
+一般には(#if 0)のようにデータセグメントと同じように設定する。
+
+今回、インテルの想定したような使い方を試してみた。普通にpush,popする分
+にはいいのだけれど、varargsがだめ。今の状態ではきっちり追うことはできな
+いけれど、スタックをがりがりいじるようなところで予想外のことになってい
+るのかな...。スタックポインタ、コピーしてアクセスできないんじゃ、いくら
+なんでも地獄過ぎだね。
+
+
+保護モードに移ったテストはVGAにベタ書き込み。リアルモードの内に320x240 16bppに
+しておきます。
+
+	movl	$0x80000,%eax
+	movl	$32000,	%ecx
+1:	movb	$5, (%eax)
+	inc	%eax
+	loop	1b
+
+ここで0x80000になっているのはセグメントが0x20000オフセットされているの
+で、本来のV-RAM 0xa0000になる。もう既に気が狂いそうだ。

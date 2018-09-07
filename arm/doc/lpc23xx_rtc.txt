@@ -1,0 +1,257 @@
+typedef void (irq_handler_t)(void);
+irq_handler_t __rtc_intr;
+// Application override interrupt handler.
+irq_handler_t rtc_intr_counter_incr __attribute__ ((weak, alias ("__rtc_intr")));
+irq_handler_t rtc_intr_alarm __attribute__ ((weak, alias ("__rtc_intr")));
+irq_handler_t rtc_intr_subsecond __attribute__ ((weak, alias ("__rtc_intr")));
+
+RTCは3つの割り込みを出せる。ymdhmsで指定したアラームと、ymdhmsのカウン
+タの増分時、ソースクロックの16,32,64,128,256,512,1024,2048カウント毎だ。
+ソースクロックは外部接続の発振子と内部のPCLKどっちかを選べる。PCLKの場
+合はプリスケーラの設定ができる。
+
+それぞれのハンドラはアプリケーションで実装。実装がない場合は__rtc_intr
+が埋め草として使われる。
+
+enum rtc_state
+  {
+    RTC_OFF,
+    RTC_ON,
+    RTC_START,
+  };
+
+enum rtc_state __rtc_state;
+
+STATIC void rtc_reset ();
+STATIC void rtc_alarm_clear (void);
+
+void
+rtc_init ()
+{
+  struct rtc_ymdhms date;
+  // Power on (On reset, the RTC is enabled.)
+RTCはデフォルトで電源が入っている。
+  mcu_peripheral_power (PCONP_PCRTC, TRUE);
+
+  // Reset all.
+RTCは本体電源のON/OFFでレジスタがリセットされないので確実にリセット。
+Interface2009/5付録基板の場合、VBATはVccに直結なのでなくてもいい。
+  rtc_reset ();
+  __rtc_state = RTC_ON;
+
+  // RTC source clock.
+Interface2009/5付録基板に32.768kHzの外部発振子をつけている。
+  *RTC_CCR |= CCR_CLKSRC;	// 32.768kHz external oscillator.
+  // If use PCLK, set RTC_PREINT and RTC_PREFRAC.
+内部クロック(PCLK)を使うならRTC_PREINTとRTC_PREFRACを設定してプリスケーラを
+設定しないといけない。
+
+RTCを全部ゼロ。これはこの基板だから。
+  memset (&date, 0, sizeof date);
+  rtc_time_set (&date);
+}
+
+void
+rtc_fini ()
+{
+
+  rtc_stop ();
+  rtc_reset ();
+  // Power off.
+  mcu_peripheral_power (PCONP_PCRTC, FALSE);
+  __rtc_state = RTC_OFF;
+}
+
+void
+rtc_reset ()
+{
+
+  *RTC_CCR = 0;		// クロックストップ。
+  *RTC_AMR = AMR_MASK;	// Alarm Mask. アラームの割り込みオフ。
+  *RTC_CIIR = 0;	// Counter Increment Interrupt. カウンター割り込みオフ
+  *RTC_CISS = 0;	// Subsecond interrupt. サブセカンド割り込みオフ
+  *RTC_ILR = ILR_RTCCIF | ILR_RTCALF | ILR_RTSSF;	// Interrupt Location
+前に残っていた割り込みをクリア
+
+  // Clear alarm
+  rtc_alarm_clear ();
+}
+
+void
+rtc_start ()
+{
+  assert (__rtc_state == RTC_ON);
+  // Start RTC clock
+割り込みの有効化はこれだけ。3つそれぞれのイネーブルは
+アラームはRTC_AMR, カウンターはRTC_CIIR、サブセカンドはRTC_CISS。
+
+  *RTC_CCR |= CCR_CLKEN;
+  __rtc_state = RTC_START;
+
+  // Interrupt Enable.
+  *VICIntSelect |= VIC_RTC; // FIQ
+FIQなのでこのOSではこの割り込みでコンテキストスイッチなし。
+  *VICIntEnable |= VIC_RTC;
+}
+
+void
+rtc_stop ()
+{
+
+  // Interrupt Disable
+  *VICIntEnable &= ~VIC_RTC;
+  // Stop RTC clock.
+  *RTC_CCR &= ~CCR_CLKEN;
+  // Clear pending interrupt.
+  *RTC_ILR = ILR_RTCCIF | ILR_RTCALF | ILR_RTSSF;
+  __rtc_state = RTC_ON;
+}
+
+bool
+rtc_time_set (struct rtc_ymdhms *date)
+{
+
+  *RTC_SEC = date->sec;
+  *RTC_MIN = date->min;
+  *RTC_HOUR = date->hour;
+  *RTC_DOM = date->day;
+  *RTC_DOW = date->wday;
+  *RTC_DOY = 0; //XXX
+  *RTC_MONTH = date->mon;
+  *RTC_YEAR = date->year;
+
+  return TRUE;
+}
+
+bool
+rtc_time_get (struct rtc_ymdhms *date)
+{
+
+  date->sec = *RTC_SEC;
+  date->min = *RTC_MIN;
+  date->hour = *RTC_HOUR;
+  date->day = *RTC_DOM;
+  date->wday = *RTC_DOW;
+  date->mon = *RTC_MONTH;
+  date->year = *RTC_YEAR;
+
+  return TRUE;
+}
+
+bool
+rtc_alarm (struct rtc_ymdhms *date, bool on)
+{
+  // Clear Pending interrupt.
+  *RTC_ILR |= ILR_RTCALF;
+
+  if (on)
+    {
+      *RTC_ALSEC = date->sec;
+      *RTC_ALMIN = date->min;
+      *RTC_ALHOUR = date->hour;
+      *RTC_ALDOM = date->day;
+      *RTC_ALDOW = date->wday;
+      *RTC_ALDOY = 0;//XXX
+      *RTC_ALMON = date->mon;
+      *RTC_ALYEAR = date->year;
+      // Alarm mask.
+      *RTC_AMR = 0;	// compare all.
+    }
+  else
+    {
+      *RTC_AMR = AMR_MASK;	// mask all.
+      rtc_alarm_clear ();
+    }
+
+  return TRUE;
+}
+
+void
+rtc_alarm_clear ()
+{
+  // Clear alarm
+  *RTC_ALSEC = 0;
+  *RTC_ALMIN = 0;
+  *RTC_ALHOUR = 0;
+  *RTC_ALDOM = 0;
+  *RTC_ALDOW = 0;
+  *RTC_ALDOY = 0;
+  *RTC_ALMON = 0;
+  *RTC_ALYEAR = 0;
+  *RTC_AMR = AMR_MASK;	// mask all;
+}
+
+bool
+rtc_counter_incr (enum ymdhms counter, bool on)
+{
+  uint32_t bit[] = { CIIR_IMYEAR, CIIR_IMMON, CIIR_IMDOM, CIIR_IMDOW,
+		     CIIR_IMHOUR, CIIR_IMMIN, CIIR_IMSEC };
+
+  // Clear Pending interrupt.
+  *RTC_ILR |= ILR_RTCCIF;
+  if (on)
+    {
+      *RTC_CIIR = bit[counter];
+この実装だと、どれか一つのカウンタの増分時しか割り込みが起きない。
+本来は全ての組み合わせでいい。
+    }
+  else
+    {
+      *RTC_CIIR = 0;
+    }
+
+  return TRUE;
+}
+
+bool
+rtc_subsecond (uint32_t subsecond_select, bool on)
+{
+  // SubSelSub-Second Select.
+  *RTC_CISS = subsecond_select;
+
+   // Clear Pending interrupt.
+  *RTC_ILR |= ILR_RTSSF;
+
+  // Enable/Disable interrupt.
+  if (on)
+    *RTC_CISS |= CISS_SUBSECENA;
+  else
+    *RTC_CISS &= ~CISS_SUBSECENA;
+
+  return TRUE;
+}
+
+void
+rtc_print ()
+{
+  struct rtc_ymdhms date;
+
+  rtc_time_get (&date);
+
+  iprintf ("%d %d %d %d %d %d %d\n", date.year, date.mon, date.day,
+	   date.wday, date.hour, date.min, date.sec);
+}
+
+void
+rtc_intr ()
+{
+  uint32_t r = *RTC_ILR;	// interrupt cause.
+
+  *RTC_ILR |= (r & ILR_MASK);	// Clear interrupt.
+RTC_ILRの予約ビットの読み込みは不定、書き込み時は0じゃないといけない。
+
+  // Dispatch application defined handler.
+  if (r & ILR_RTCCIF)
+    rtc_intr_counter_incr ();
+  if (r & ILR_RTCALF)
+    rtc_intr_alarm ();
+  if (r & ILR_RTSSF)
+    rtc_intr_subsecond ();
+}
+
+void
+__rtc_intr ()	// Place holder.
+{
+ユーザ定義のハンドラがなければここ。
+  rtc_print ();
+}

@@ -1,0 +1,56 @@
+OUTPUT_FORMAT ("elf32-h8300")
+OUTPUT_ARCH (h8300:h8300sx)
+
+MEMORY {
+	start_vector	: o = 0x000000, l = 0x4
+	exceptions	: o = 0x000010, l = 0x8		/* invalid inst, trace */
+	interrupts	: o = 0x00001c, l = 0x3e4	/* -0xff2400 */
+
+	rom		: o = 0x000400, l = 0x7ff00	/* 512KB */
+	ram		: o = 0xff2000, l = 0xa000	/* 40KB */
+}
+
+SECTIONS {
+	 _stack_start = 0xffc000;
+	 .start_vector :
+	 {
+	 	 _VBR = .;
+	 	 *(.vector)
+	 } > start_vector
+
+	 .exceptions :
+	 {
+		*(.exceptions)
+	 } > exceptions
+
+	 .interrupts :
+	 {
+		*(.interrupts)
+	 } > interrupts
+
+	 .text :
+	 {
+		*(.text*)
+		*(.rodata*)
+		 . = ALIGN (4);
+	 } > rom
+
+	 _rom_data_start = .;
+	 .data :
+	 AT (ADDR (.text) + SIZEOF (.text))
+	 {
+	 	 _data_start = .;
+	 	 *(.data*)
+		 . = ALIGN (4);
+		 _data_end = .;
+	 } > ram
+	 _rom_data_end = _rom_data_start + SIZEOF (.data);
+
+	 .bss :
+	 {
+	         _bss_start = .;
+	      	 *(.bss*)
+	 } > ram
+	_bss_end = .;
+}
+

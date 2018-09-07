@@ -1,0 +1,113 @@
+A20について。
+
+PC/ATではキーボードコントローラの8042の出力ポートでサポートした。(出力
+ポート2) 8042は8048系の1チップ8bitマイクロコントローラ。レジスタはアキュ
+ムレータとフラグのみで、メモリの一部分が8本のレジスタになっている。それ
+が2セットでレジスタバンクになっていて、スタックは8段のハードウェアスタッ
+ク。使わないときはRAMとして使えるようになっている。メモリも2バンクに分
+かれている。Port1(8bit)とPort2(8bit)と入力専用のTEST0,TEST1がある。
+TEST0: Keyboard Clock (IN)
+TEST1: Mouse Clock (IN)
+入力ポート(Port1)が使われているのはキーボードとマウスのデータの二つだけ。
+出力ポートはPort2
+
+このI/Oでキーボードとシリアル通信をする。キーボード側にも8048系のチップ
+が乗っている。余りの入力ポートを、かつてはボード上のジャンパの設定を読
+むのに使っていたりしたようだ。
+
+PS/2では新しく0x92に"PS/2 System Control Port A"を作り、そこで設定でき
+るようにした。
+
+なのでPC/ATの場合0x92は必須なポートではない。
+OADG(http://www.oadg.or.jp/)のリファレンスではPS/2との互換を保つ時のみ
+必要としている。
+
+最近のBIOSではINT 15H,AH=24Hで設定できるものがある。調べたところ、2000
+年のPhoenix BIOS 4.0のユーザマニュアルには記載がなかった。AMIはマニュア
+ルを探せず。General Software Inc.のEmbeded BIOS 4.1のマニュアルに記載が
+あった。
+
+AH: 24h, indicating query port 92h A20 gate capability function.
+[Input]
+AL: subfunctions
+    01h: enable A20 gate
+    02h: disable A20 gate
+    03h: determine if port 92h support is available.
+[Output]
+CY set if failure (no port 92h support), else clear if success.
+(CY ... carry flag set)
+AH if failure, 86h
+BX if subfunction 03h, regurns the value 2, indecating support available.
+
+
+8042の場合
+入力ポートの設定は
+PC/AT
+7 Keyboard Inhibit switch
+6 Display switch
+5 Manufacturing Jumper
+4 RAM on the System Board
+3-0 reserved.
+PS/2
+7-2 reserved
+1 Mouse data in
+0 Keyboard data in
+???どっち???
+
+出力ポートの設定は
+7 Keyboard Data Out
+6 Keyboard Clock Out
+5 Input Buffer Empty / IRQ12
+4 IRQ1
+3 Auxiliary Clock Out
+2 Auxiliary Data Out
+1 Gate A20
+0 Reset Microprocessor.
+
+ポートはR/W。コントローラコマンド->0x64
+0xd0 出力ポート読み出し。出力バッファーが空の時、出力ポートの状態を0x60に置く。
+0xd1 出力ポート書き込み。次に0x60に書き込まれるのデータが出力ポートに設定される。
+
+0x64でコマンドを設定しデータを0x60で送受信する。
+0x64の読み出しはコントローラステータス。
+
+実際の実装はどうなっているのか
+Winbond Super I/O 83977では0xd1のコマンドはA20の出力ポート(bit 1)にしか
+影響を与えない。
+このチップ独自のレジスタでPS/2の0x92を有効/無効にできる(P92EN)。これは
+BIOS用か。
+
+
+----------------------------------------
+BIOSコール
+//	movw	$0x2401, %ax	// enable A20 gate
+	movw	$0x2402, %ax	// disable A20 gate
+	int	$0x15
+
+----------------------------------------
+KBD(i8042)
+
+#define	inb(addr, val)	__asm volatile ("inb %1, %0" : "=a"((uint8_t)val) : "d"((uint16_t)addr))
+#define	outb(addr, val)	__asm volatile ("outb %0, %1" :: "a"((uint8_t)val), "d"((uint16_t)addr))
+
+  // make sure that i/o buffer is empty.
+  do
+    {
+      inb (0x60, r0);	// drain buffer
+      inb (0x64, r0);	// get status
+    }
+  while (r0 & 0x01);	// output(i8042) buffer full
+  do
+    {
+      inb (0x64, r0);
+    }
+  while (r0 & 0x02);	// input(i8042) Buffer Full
+
+  outb(0x64, 0xd1); // output port write command.
+  outb(0x60, 0x01); // write to output port. (A20 Disable)
+//  outb(0x60, 0x03); // write to output port. (A20 Enable)
+  // bit 0 ... RESET if set 0.
+  // bit 1 ... A20 disabled if set 0.
+
+
+

@@ -1,0 +1,44 @@
+OUTPUT_FORMAT ("elf32-littlearm")
+OUTPUT_ARCH (arm)
+
+MEMORY {
+	start_vector	: o = 0x00000000, l = 0x20
+	rom		: o = 0x00000200, l = 0x7e000	/* 504KB */
+	/* 0x7e000-0x7ffff contains LPC23xx Firmware */
+	ram		: o = 0x40000000, l = 0x10000	/* 64KB */
+}
+
+SECTIONS {
+	 stack_start = 0x4000fff0;	/* 64KB - 16byte */
+/*	 stack_start = 0x40002000;*/
+
+	 .start_vector :
+	 {
+	 	 *(.vector)
+	 } > start_vector
+
+	 .text :
+	 {
+	 	 *(.text*)
+		 *(.rodata*)
+		 . = ALIGN (4);
+	 } > rom
+
+	 rom_data_start = .;
+	 .data :
+	 AT (ADDR (.text) + SIZEOF (.text))
+	 {
+	 	 data_start = .;
+	 	 *(.data*)
+		 . = ALIGN (4);
+		 data_end = .;
+	 } > ram
+	 rom_data_end = rom_data_start + SIZEOF (.data);
+
+	 .bss :
+	 {
+	         bss_start = .;
+	      	 *(.bss*)
+	 } > ram
+	 bss_end = .;
+}

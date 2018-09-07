@@ -1,0 +1,103 @@
+x86続き。コールゲートについて。
+
+コールゲートは現在のタスク(TSS)のSS0:ESP0(0-2)にスタックを切り替えてコー
+ルゲートデスクリプタ上のCS:EIPにジャンプする。
+
+どの特権準位にジャンプするかはデスクリプタに登録するCSで設定する。
+
+そのコールゲートを呼べる準位はデスクリプタ自体の準位で設定する。
+
+呼出し後のDS,ES,FS,GSは自分で設定する。
+
+コールゲート中の関数でDS,ES,FS,GSを使用した場合、元の(低い)準位に戻る
+際にCPUがそれぞれのセグメントに0を設定する。
+セグメントの保護はセグメントレジスタへの代入の時にされるので、そのまま
+返してしまうと保護できないため、元の準位に戻った後に再設定することで
+保護をする。
+SSはプッシュされたのをポップするのでその必要はない。
+
+引数は31個までCPUがスタック間コピーをする。引数の数はデスクリプタに設定する。
+
+GDTに設定してあるのは場所だけ。内容はランタイムに設定することにした。
+  { 0x0, 0x0, 0x0, 0x0, 0x0, "GATE_SYSTEMCALL" },
+
+
+void callee_gate (int, int);
+STATIC void (*user_gate) (int, int);
+
+void
+callgate_init ()
+{
+  union descriptor *d = descriptor (GDT_GATE_SYSTEMCALL);
+
+  gate_call (&d->gate, GDT_CODE32, (addr_t)callee_gate, 2);引数は2つに設定。
+  descriptor_set_priority (d, 3);特権準位3(最低)から呼べるように設定。
+}
+
+void
+callee_gate_install (void (*func)(int, int))
+{
+
+  user_gate = func;
+}
+
+void
+callee_gate_c (int arg0, int arg1)
+{
+  if (user_gate)
+    user_gate (arg0, arg1);
+}
+
+コールゲートを呼んだ時に一番最初に実行されるところ。この段階でスタックは
+切り替えられている。
+/*
+	-----------&lt;---callee stack top (TSS SS0:ESP0)
+	caller SS
+	-----------
+	caller ESP
+	-----------
+	parameter 1
+	-----------
+	parameter 2
+	-----------
+	caller CS
+	-----------
+	caller EIP &lt;---callee ESP
+	-----------
+*/
+FUNC (callee_gate)
+	pushl	%ebp
+	movl	%esp,	%ebp
+	pushl	16(%ebp)  引数を積み直し。
+	pushl	12(%ebp)
+	call callee_gate_c
+	addl $8, %esp     積んだ引数を元にもどして、
+	popl	%ebp
+	lret $8		SS:ESPに切り替えて,CS:EIPにジャンプ。8は引数の分。
+この際にcallerのESPも同時にpopされるので、callerは引数分スタックを巻き戻す
+必要はない。
+
+FUNC (caller_gate)
+	ENTER_32
+	// backup Data segment.
+コールゲートから帰ってくる時にCPUがDS,ES,FS,GSを0にする可能性があるので
+退避しておく。
+	movw	%ds,	%ax
+	pushl	%eax
+	// parameter.
+	pushl	12(%ebp)
+	pushl	8(%ebp)
+	lcall	$GDT_GATE_SYSTEMCALL, $0
+calleeのlretが二つの引数分のスタックを巻き戻すので、ここではスタックの
+調整は不用。
+	// restore Data segment.
+この段階ではDS,ES,FS,GSは0の可能性があるので、復帰する。(この段階では
+SSしか使えない。) QEMUはセグメントチェックが足りないところがあって、
+DSが0になっていても、この先動いてしまう。
+	popl	%eax
+	movw	%ax,	%ds
+	movw	%ax,	%es
+	movw	%ax,	%fs
+	movw	%ax,	%gs
+	LEAVE_32
+	ret

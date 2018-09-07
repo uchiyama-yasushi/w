@@ -1,0 +1,112 @@
+
+/*
+RAX 	Return value
+RDI 	1st arg
+RSI 	2nd arg
+RDX 	3rd arg
+RCX 	4th arg
+R8	scratch
+R9	scratch
+R10	scratch
+R11	scratch
+R12-R15 Callee saved.
+RBX 	Callee saved.
+RBP 	Callee saved. Frame pointer
+RSP 	Stack pointer.
+*/
+
+int
+a (int i)
+{
+  int j = i + 5;
+
+  return j;
+}
+/*
+	.text
+	.globl	a
+	.type	a, @function
+a:
+.LFB0:
+	.cfi_startproc
+	leal	5(%rdi), %eax
+	ret
+	.cfi_endproc
+.LFE0:
+	.size	a, .-a
+	.ident	"GCC: (GNU) 4.6.0"
+*/
+
+int
+b (int i, int j)
+{
+
+  return i + j;
+}
+/*
+	.globl	b
+	.type	b, @function
+b:
+.LFB1:
+	.cfi_startproc
+	leal	(%rdi,%rsi), %eax
+	ret
+	.cfi_endproc
+.LFE1:
+	.size	b, .-b
+	.ident	"GCC: (GNU) 4.6.0"
+*/
+
+int
+c ()
+{
+  d (1, 2, 3, 4);
+}
+/*
+	.globl	c
+	.type	c, @function
+c:
+.LFB2:
+	.cfi_startproc
+	subq	$8, %rsp
+	.cfi_def_cfa_offset 16
+	movl	$4, %ecx
+	movl	$3, %edx
+	movl	$2, %esi
+	movl	$1, %edi
+	movl	$0, %eax
+	call	d
+	addq	$8, %rsp
+	.cfi_def_cfa_offset 8
+	ret
+	.cfi_endproc
+.LFE2:
+	.size	c, .-c
+*/
+
+int
+e (int i, int j)
+{
+  f ();
+  return j;
+}
+/*
+	.globl	e
+	.type	e, @function
+e:
+.LFB3:
+	.cfi_startproc
+	pushq	%rbx
+	.cfi_def_cfa_offset 16
+	.cfi_offset 3, -16
+	movl	%esi, %ebx
+	movl	$0, %eax
+	call	f
+	movl	%ebx, %eax
+	popq	%rbx
+	.cfi_def_cfa_offset 8
+	ret
+	.cfi_endproc
+.LFE3:
+	.size	e, .-e
+*/

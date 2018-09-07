@@ -1,0 +1,17 @@
+ハードディスクイメージの作成
+
+gmake all
+(cd pcat_bootloader; gmake install_floppy)
+(cd pcat_bootloader_installer; gmake install_floppy)
+qemu  -serial stdio -std-vga -fda pcat_floppyimage/floppy.img -hda pcat_diskimage/disk.img -boot a
+ここで> installでブートローダがpcat_diskimage/disk.imgにインストールされる。
+(cd pcat_kernel;gmake install_hdd)
+これでpcat_diskimage/disk.imgにカーネルがインストールされる。
+qemu  -serial stdio -std-vga -fda pcat_floppyimage/floppy.img -hda pcat_diskimage/disk.img -boot c
+> load 0 kernel.elfでカーネルがブートされる。
+
+
+フロッピー直ブート
+gmake all
+(cd pcat_kernel;gmake install_fdd)
+qemu  -serial stdio -std-vga -fda pcat_floppyimage/floppy.img

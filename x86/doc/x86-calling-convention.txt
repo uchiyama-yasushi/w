@@ -1,0 +1,196 @@
+i386-gccの呼出規約について。
+
+Caller saved: eax, ecx, edx
+Callee saved: ebx, esi, edi, ebp, esp
+Return value: eax
+Frame pointer ebp
+Stack pointer esp
+
+引数は全てスタックに右から積む。引数のスタックの巻戻しはcallerがやる。
+__attribute__((regparm (NUM)))や、コンパイルオプションの-mregparm=NUMで
+最大3つまで(順番はeax, edx, ecx)レジスタ渡しとすることができる。
+残りは右からスタックに積む。
+
+
+fastcallの場合はecx, edxの順で最初の二つをレジスタ渡し。これはi386のみ。
+
+
+`fastcall'
+     On the Intel 386, the `fastcall' attribute causes the compiler to
+     pass the first argument (if of integral type) in the register ECX
+     and the second argument (if of integral type) in the register EDX.
+     Subsequent and other typed arguments are passed on the stack.
+     The called function will pop the arguments off the stack.  If the
+     number of arguments is variable all arguments are pushed on the
+     stack.
+
+`regparm (NUMBER)'
+     On the Intel 386, the `regparm' attribute causes the compiler to
+     pass arguments number one to NUMBER if they are of integral type
+     in registers EAX, EDX, and ECX instead of on the stack.  Functions
+     that take a variable number of arguments will continue to be
+     passed all of their arguments on the stack.
+
+     Beware that on some ELF systems this attribute is unsuitable for
+     global functions in shared libraries with lazy binding (which is
+     the default).  Lazy binding will send the first call via resolving
+     code in the loader, which might assume EAX, EDX and ECX can be
+     clobbered, as per the standard calling conventions.  Solaris 8 is
+     affected by this.  GNU systems with GLIBC 2.1 or higher, and
+     FreeBSD, are believed to be safe since the loaders there save all
+     registers.  (Lazy binding can be disabled with the linker or the
+     loader if desired, to avoid the problem.)
+
+`-mregparm=NUM'
+     Control how many registers are used to pass integer arguments.  By
+     default, no registers are used to pass arguments, and at most 3
+     registers can be used.  You can control this behavior for a
+     specific function by using the function attribute `regparm'.
+     *Note Function Attributes::.
+
+     *Warning:* if you use this switch, and NUM is nonzero, then you
+     must build all modules with the same value, including any
+     libraries.  This includes the system libraries and startup modules.
+
+
+
+int
+a (int a0, int a1, int a2, int a3)
+{
+
+  return a0 + a1 + a2 - a3;
+}
+
+int
+b ()
+{
+  return a (0, 1, 2, 3);
+}
+
+main ()
+{
+
+  a (0xaa55, 4, 3, 2);
+}
+
+cc -O2 -fomit-frame-pointer -finhibit-size-directive -fno-ident -S a.c
+
+	.file	"a.c"
+	.text
+	.p2align 2,,3
+.globl a
+	.type	a, @function
+a:
+	movl	8(%esp), %eax
+	addl	4(%esp), %eax
+	addl	12(%esp), %eax
+	subl	16(%esp), %eax
+	ret
+
+	.p2align 2,,3
+.globl b
+	.type	b, @function
+b:
+	pushl	$3 右から詰む。(cdecl)
+	pushl	$2
+	pushl	$1
+	pushl	$0
+	call	a
+	addl	$16, %esp 引数領域の巻戻しはcallerがやる。
+	ret
+
+	.p2align 2,,3
+.globl main
+	.type	main, @function
+main:
+	leal	4(%esp), %ecx; lea フラグレジスタを書きかえない。
+	andl	$-16, %esp
+	pushl	-4(%ecx)
+	pushl	%ecx
+	popl	%ecx
+	leal	-4(%ecx), %esp
+	ret
+
+cdecl 右側の引数から積む。callarがスタックを戻す。
+Pascal 左側から。calleeがスタックを戻す。
+
+レジスタ渡しについて。
+
+int
+a (int a0, int a1, int a2, int a3)
+{
+
+  return a0 + a1 + a2 - a3;
+}
+
+int
+b ()
+{
+  return a (0, 1, 2, 3);
+}
+
+main ()
+{
+
+  a (0xaa55, 4, 3, 2);
+}
+
+gcc -O2 -fomit-frame-pointer -finhibit-size-directive -fno-ident -mregparm=3 -S a.c
+
+	.file	"a.c"
+	.text
+	.p2align 2,,3
+.globl a
+	.type	a, @function
+a:
+	addl	%edx, %eax
+	addl	%ecx, %eax
+	subl	4(%esp), %eax
+	ret
+	.p2align 2,,3
+.globl b
+	.type	b, @function
+b:
+	pushl	$3          ;(引数4)
+	movl	$2, %ecx    ;(引数3)
+	movl	$1, %edx    ;(引数2)
+	xorl	%eax, %eax  ;(引数1)
+	call	a
+	popl	%edx ;callerがスタックを戻す。2つまでならpoplを重ねる。
+	ret
+	.p2align 2,,3
+.globl main
+	.type	main, @function
+main:
+	leal	4(%esp), %ecx
+	andl	$-16, %esp
+	pushl	-4(%ecx)
+	pushl	%ecx
+	popl	%ecx
+	leal	-4(%ecx), %esp
+	ret
+
+3引数までeax, edx, ecxで渡される。ボーランド__fastcall
+
+attributeを使う場合は定義にもattributeをつける。
+
+int a (int, int, int, int, int) __attribute__((regparm (3)));
+
+int __attribute__((regparm (3)))
+a (int a0, int a1, int a2, int a3, int a4)
+{
+
+  return a0 + a1 + a2 - a3 + a4;
+}
+
+int
+b ()
+{
+  return a (0, 1, 2, 3, 4);
+}
+	pushl	$4  レジスタに乗せきれない分は右から。
+	pushl	$3
+	movl	$2, %ecx
+	movl	$1, %edx
+	xorl	%eax, %eax
+	call	a

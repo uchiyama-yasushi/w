@@ -1,0 +1,47 @@
+SH7262 Simple Monitor Build Jun  6 2010 16:50:45
+mon> l
+CCR1=0 CCR2=0
+~>Local file name? a.mot
+23386 lines transferred in 2 minutes 22 seconds 
+!
+Read 549497 byte. success
+Start address: 0x1c002a80
+mon> 
+mon> g
+Start address: 0x1c002a80
+SIO@
+stack_start: 0x1c080400
+RAM data: 0x1c02da38-0x1c02db8c 340byte
+bss: 0x1c02db8c-0x1c02dc8c 256byte
+VBR: 0x1c000000 (0x1c000000)
+FRQCR=104
+PLL: x12, Internal x1/1, Peripheral x1/6
+Ick=144MHz, Pck=24MHz, Bck=48MHz
+STBCR2: ........ [0x0] 0
+STBCR3: ......|. [0x2] 2
+STBCR4: ........ [0x0] 0
+STBCR5: ...|.... [0x10] 16
+STBCR6: ........ [0x0] 0
+STBCR7: ..|.|.|. [0x2a] 42
+STBCR8: ........ [0x0] 0
+user> help
+avaliable command: help reset info test 
+user> test
+sbrk:base=0x1c02dc8c size=0
+lua start: heap 0x1c02dc8c-0x1c02dc8c (0), stack 0x1c080238-0x1c080400 (456)
+sbrk:base=0x1c02dc8c size=0
+sbrk:base=0x1c02dc8c size=1024
+sbrk:base=0x1c02e08c size=0
+sbrk:base=0x1c02e08c size=1024
+sbrk:base=0x1c02e48c size=0
+sbrk:base=0x1c02e48c size=1024
+sbrk:base=0x1c02e88c size=0
+lua_open: heap 0x1c02dc8c-0x1c02e88c (3072), stack 0x1c08009c-0x1c080400 (868)
+sbrk:base=0x1c02e88c size=0
+lua_register: heap 0x1c02dc8c-0x1c02e88c (3072), stack 0x1c08009c-0x1c080400 (868)
+hello
+sbrk:base=0x1c02e88c size=0
+luaL_dofile: heap 0x1c02dc8c-0x1c02e88c (3072), stack 0x1c07f870-0x1c080400 (2960)
+sbrk:base=0x1c02e88c size=0
+lua end: heap 0x1c02dc8c-0x1c02e88c (3072), stack 0x1c07f870-0x1c080400 (2960)
+user> 

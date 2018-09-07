@@ -1,0 +1,312 @@
+V7 malloc
+
+コントロールブロックは最低でポインタサイズ。なので最低でも下1ビットは0
+なので、この1ビットをブロックが使用中か、開放されているかのフラグに使う。
+
+なのでアロケート単位は最低でもsizeof (void *)
+
+ブロックのリンクは必ずポインタの値が上昇する方向にする。そうすることで
+次のリンクのポインタが現在よりも小さいということをループ条件とできる。
+リンクの一番下と上は(積荷はないけれど)常に使用中の特別の役割にすること
+でリンクのつけかえの面倒さを廃している。
+
+sbrkの返り値は不連続でもかまわない。その場合、開放されたブロックの結合
+ができなくなるので空間効率は悪くなる。
+
+リンクのどこから場所を探すか。
+  + mallocの後は今回確保した場所の次のブロックをスタート地点とするよ
+うに設定する。
+
+  + freeの後は、今回開放した場所をスタート地点とする。
+
+ブロックの結合はどこで行うか。
+  mallocの度に設定されたスタート地点からリンクを辿りながら結合する。その
+最中に、指定されたバイト数のある領域があれば、そこで結合は終了。どこにも
+なかった場合には最低でも一周、最悪で二周する。
+
+ブロックの伸張は必ず、一番上に追加する。追加する場合1KB単位に丸めて追加
+する。
+
+伸張した場合、一番下から場所を探しはじめる。
+
+reallocは現在の領域を開放し、新しくmallocする。freeの後のmallocはfreeし
+た場所から取得しようとするので、後に開放のブロックがあり、十分な領域が
+とれれば、内容のコピーは不要になる。
+
+新しくmallocした領域にfreeした領域のポインタからコピーする。
+
+freeした場所の前方に開放のブロックがあり、そこと結合した場合には、新し
+い場所と古い場所が重なり、mallocの段階で古い場所の途中にコントロールブ
+ロックが置かれる場合がある。この場合、上記のコピーの内容がコントロール
+ブロックで上書きされてしまっているので、mallocの段階でコントロールブロッ
+クを書きこむ前にそこの内容を保存しておき、reallocの段階でそれを元に戻す。
+その値がallocx
+
+pがreallocに渡された場所
+qが新しく確保された場所
+q->nextの場所はコントロールブロックになる。
+                            + overwrited by control block.
+                 p              p->next
+old        | p-q |          *  |
+                 /         /|  /
+                /         / | /
+               /         /  |/
+              /         /   /
+             /         /   /|           
+            /         /   / |
+           /         /   /  |
+new       |         |  p-q  |
+          q         ^      q->next (q+nw)
+          |       nw        |
+
+                    ^ここは q->next - (p -q)
+q->next = q+nwなので q+nw - (p -q) = q + (q + nw - p)
+
+/*	@(#)malloc.c	2.1	SCCS id keyword	*/
+#ifdef debug
+#define ASSERT(p) if(!(p))botch("p");else
+botch(s)
+char *s;
+{
+	printf("assertion botched: %s\n",s);
+	abort();
+}
+#else
+#define ASSERT(p)
+#endif
+
+/*	avoid break bug */
+#ifdef pdp11
+#define GRANULE 64
+#else
+#define GRANULE 0
+#endif
+/*	C storage allocator
+ *	circular first-fit strategy
+ *	works with noncontiguous, but monotonically linked, arena
+ *	each block is preceded by a ptr to the (pointer of) 
+ *	the next following block
+ *	blocks are exact number of words long 
+ *	aligned to the data type requirements of ALIGN
+ *	pointers to blocks must have BUSY bit 0
+ *	bit in ptr is 1 for busy, 0 for idle
+ *	gaps in arena are merely noted as busy blocks
+ *	last block of arena (pointed to by alloct) is empty and
+ *	has a pointer to first
+ *	idle blocks are coalesced during space search
+ *
+ *	a different implementation may need to redefine
+ *	ALIGN, NALIGN, BLOCK, BUSY, INT
+ *	where INT is integer type to which a pointer can be cast
+*/
+#define INT int
+#define ALIGN int
+#define NALIGN 1
+#define WORD sizeof(union store)
+#define BLOCK 1024	/* a multiple of WORD*/
+#define BUSY 1
+#define NULL 0
+#define testbusy(p) ((INT)(p)&BUSY)
+#define setbusy(p) (union store *)((INT)(p)|BUSY)
+#define clearbusy(p) (union store *)((INT)(p)&~BUSY)
+
+union store { union store *ptr;
+	      ALIGN dummy[NALIGN];
+	      int calloc;	/*calloc clears an array of integers*/
+};
+
+static	union store allocs[2];	/*initial arena*/
+ここでallocsをデータセクションにとっているのはデータセクション < bssを
+仮定している
+static	union store *allocp;	/*search ptr*/
+static	union store *alloct;	/*arena top*/
+static	union store *allocx;	/*for benefit of realloc*/
+char	*sbrk();
+
+char *
+malloc(nbytes)
+unsigned nbytes;
+{
+	register union store *p, *q;
+	register nw;
+	static temp;	/*coroutines assume no auto*/
+
+	if(allocs[0].ptr==0) {	/*first time*/
+		allocs[0].ptr = setbusy(&allocs[1]);
+		allocs[1].ptr = setbusy(&allocs[0]);
+		alloct = &allocs[1];
+		allocp = &allocs[0];
+底辺とてっぺんを双方向リンクし、ここからは領域をとらないようにビジーと設定。
+	}
+	nw = (nbytes+WORD+WORD-1)/WORD;
+コントロールブロック(union store)の領域を追加してユニットに丸める。
+
+	ASSERT(allocp>=allocs && allocp<=alloct);
+	ASSERT(allock());
+	for(p=allocp; ; ) {
+		for(temp=0; ; ) {
+			if(!testbusy(p->ptr)) {
+開放ブロックが続く限りつなげる
+				while(!testbusy((q=p->ptr)->ptr)) {
+					ASSERT(q>p&&q<alloct);
+					p->ptr = q->ptr;
+				}
+				if(q>=p+nw && p+nw>=p)
+					goto found;
+その途中で場所があればそこを使う。
+			}
+開放ブロックの連続が切れた。
+			q = p;
+			p = clearbusy(p->ptr);
+ポインタと使用中のフラグを共用しているのでポインタを取り出すには
+BUSYを落とさないといけない。ここでqがBUSY、pがその次のブロック
+			if(p>q) 登り
+				ASSERT(p<=alloct);
+登りならそれはてっぺんより下
+			else if(q!=alloct || p!=allocs) {
+下りならqはてっぺんで、pは一番下じゃないといけない。(ここはデバッグ用)
+				ASSERT(q==alloct&&p==allocs);
+				return(NULL);
+			} else if(++temp>1)
+二回下りを検出することで全部のリンクを廻ったことになる。
+				break;
+		}
+メモリがなかった時にはalloc_topの上に新しく拾ってきたメモリをつけたす。
+		temp = ((nw+BLOCK/WORD)/(BLOCK/WORD))*(BLOCK/WORD);
+BLOCKに丸める。
+		q = (union store *)sbrk(0);
+		if(q+temp+GRANULE < q) {
+			return(NULL);
+		}
+		q = (union store *)sbrk(temp*WORD);
+		if((INT)q == -1) {
+			return(NULL);
+		}
+		ASSERT(q>alloct);
+		alloct->ptr = q;
+てっぺんにつなげる。
+		if(q!=alloct+1)
+			alloct->ptr = setbusy(alloct->ptr);
+sbrkが前回から連続したアドレスじゃなかった場合このブロックを越して
+結合しないようにbusyにしておく。
+sbrk連続
+  alloct
+    ||
+     q
+これはalloctとqを結合できる。
+sbrk不連続
+  alloct
+    |
+             |
+             q
+これは結合できないのでalloctはBUSYにする。
+
+		alloct = q->ptr = q+temp-1;
+		alloct->ptr = setbusy(allocs);
+新しくてっぺん(alloct)を設定し、それは一番下にリンクし、メモリ獲得に
+使われない(BUSY)ようにする。
+	}
+found:
+	allocp = p + nw;
+次のmallocのスタートは(allocp)は今回確保した領域の次にする。
+	ASSERT(allocp<=alloct);
+	if(q>allocp) {
+獲得した領域よりも、必要な領域が小さい時はそこを分割する。
+		allocx = allocp->ptr;
+reallocで直前に開放した領域(まだコピー前)と領域が重なってしまった時の
+ためにコントロールブロックを設定する前にそこの値を保存しておく。
+		allocp->ptr = p->ptr;
+コントロールブロックを設定
+	}
+	p->ptr = setbusy(allocp);
+この領域は使用中。
+	return((char *)(p+1));
+コントロールブロックの後が実際の積荷。
+}
+
+/*	freeing strategy tuned for LIFO allocation
+*/
+free(ap)
+register char *ap;
+{
+	register union store *p = (union store *)ap;
+
+	ASSERT(p>clearbusy(allocs[1].ptr)&&p<=alloct);
+clearbusy(allocs[1].ptr)なので(これは一番下のポインタ)一番下よりも上ということ。
+	ASSERT(allock());
+	allocp = --p;
+コントロールブロックはその一つ下で、次にmallocする時はここから探すようにする。
+	ASSERT(testbusy(p->ptr));
+そしてここは使用中
+	p->ptr = clearbusy(p->ptr);
+このブロックを開放。
+	ASSERT(p->ptr > allocp && p->ptr <= alloct);
+このブロックの次のポインタが登りであり(てっぺんじゃない)、それがてっぺん
+以下である。(てっぺんなら、そこは積荷を持たないし、次のブロックは一番下(下り))
+}
+
+/*	realloc(p, nbytes) reallocates a block obtained from malloc()
+ *	and freed since last call of malloc()
+ *	to have new size nbytes, and old content
+ *	returns new location, or 0 on failure
+*/
+
+char *
+realloc(p, nbytes)
+register union store *p;
+unsigned nbytes;
+{
+	register union store *q;
+	union store *s, *t;
+	register unsigned nw;
+	unsigned onw;
+
+	if(testbusy(p[-1].ptr))
+		free((char *)p);
+まずは場所を開放する。
+	onw = p[-1].ptr - p;
+	q = (union store *)malloc(nbytes);
+新しく場所をとる。
+	if(q==NULL || q==p)
+		return((char *)q);
+とれなかったり、運よく次のブロックから結合できたらそのまま終了。
+
+	s = p;
+	t = q;
+	nw = (nbytes+WORD-1)/WORD;
+	if(nw<onw)
+		onw = nw;
+	while(onw--!=0)
+		*t++ = *s++;
+場所が変更されたのでコピーする。
+
+	if(q<p && q+nw>=p)
+		(q+(q+nw-p))->ptr = allocx;
+前回の場所の途中に、今回の領域の次のコントロールブロックが設定されてし
+まった場合は、それがコピーされてしまっているので、とっておいた元の値を
+戻す。
+
+	return((char *)q);
+}
+
+#ifdef debug
+allock()
+{
+#ifdef longdebug
+	register union store *p;
+	int x;
+	x = 0;
+	for(p= &allocs[0]; clearbusy(p->ptr) > p; p=clearbusy(p->ptr)) {
+全部のリンクをまわる。
+		if(p==allocp)
+			x++;
+	}
+	ASSERT(p==alloct);
+	return(x==1|p==allocp);
+mallocの場所探しの位置(allocp)は一つだけであり、なかったとしたら、それは
+てっぺん(alloct)に設定されている。
+#else
+	return(1);
+#endif
+}
+#endif

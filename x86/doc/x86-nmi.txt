@@ -1,0 +1,2 @@
+0x70 RT/CMOS RAM, NMI
+NMIを設定した時は0x71のダミーリードをすること。 (OADG)

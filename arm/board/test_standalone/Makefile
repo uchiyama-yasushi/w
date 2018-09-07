@@ -1,0 +1,18 @@
+all: ram
+
+ROOT_DIR	= ../../../
+
+include ../../mk/lpc2388.mk
+
+KERNOBJS = ${KERN_CORE_OBJS} ${KERN_CONSOLE_OBJS} ${KERN_SHELL_OBJS}	\
+${KERN_DELAY_OBJS} ${KERN_TIMER_OBJS} shell_command.o
+
+CFLAGS += -DDEBUG -DTHREAD_DISABLE -DSTATIC=""
+CFLAGS += -DPROMPT="\"user> \"" -DPROMPT_BUFFER_SIZE=16 -DPROMPT_HISTORY_CONF=0
+ASFLAGS += -DTHREAD_DISABLE
+
+OBJS =  main.o gpio.o ${KERNOBJS} ${ARMOBJS}
+LIBTYPE = MINLIB
+
+include ${MK_DIR}/target.mk
+include ${MK_DIR}/utils.mk

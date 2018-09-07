@@ -1,0 +1,915 @@
+$ sh-elf-gcc -Q --help=target -c
+The following options are target specific:
+  -m1                         		[enabled]
+  -m2                         		[disabled]
+  -m2a                        		[disabled]
+  -m2a-nofpu                  		[disabled]
+  -m2a-single                 		[disabled]
+  -m2a-single-only            		[disabled]
+  -m2e                        		[disabled]
+  -m3                         		[disabled]
+  -m3e                        		[disabled]
+  -m4                         		[disabled]
+  -m4-100                     		[disabled]
+  -m4-100-nofpu               		[disabled]
+  -m4-100-single              		[disabled]
+  -m4-100-single-only         		[disabled]
+  -m4-200                     		[disabled]
+  -m4-200-nofpu               		[disabled]
+  -m4-200-single              		[disabled]
+  -m4-200-single-only         		[disabled]
+  -m4-300                     		[disabled]
+  -m4-300-nofpu               		[disabled]
+  -m4-300-single              		[disabled]
+  -m4-300-single-only         		[disabled]
+  -m4-340                     		[disabled]
+  -m4-400                     		[disabled]
+  -m4-500                     		[disabled]
+  -m4-nofpu                   		[disabled]
+  -m4-single                  		[disabled]
+  -m4-single-only             		[disabled]
+  -m4a                        		[disabled]
+  -m4a-nofpu                  		[disabled]
+  -m4a-single                 		[disabled]
+  -m4a-single-only            		[disabled]
+  -m4al                       		[disabled]
+  -mb                         		[enabled]
+  -mbigtable                  		[disabled]
+  -mbranch-cost=              		0xffffffff
+  -mcbranchdi                 		[enabled]
+  -mcmpeqdi                   		[disabled]
+  -mcut2-workaround           		[disabled]
+  -mdalign                    		[disabled]
+  -mdiv=                      		
+  -mdivsi3_libfunc=           		
+  -mexpand-cbranchdi          		[enabled]
+  -mfmovd                     		[disabled]
+  -mfused-madd                		[disabled]
+  -mgettrcost=                		0xffffffff
+  -mhitachi                   		[disabled]
+  -mieee                      		[disabled]
+  -minline-ic_invalidate      		[disabled]
+  -misize                     		[disabled]
+  -ml                         		[disabled]
+  -mnomacsave                 		[disabled]
+  -mpadstruct                 		[disabled]
+  -mprefergot                 		[disabled]
+  -mpretend-cmove             		[disabled]
+  -mrelax                     		[disabled]
+  -mrenesas                   		[disabled]
+  -mspace                     		[disabled]
+  -multcost=                  		0xffffffff
+  -musermode                  		[disabled]
+
+The following options are target specific:
+  -m1                         Generate SH1 code
+  -m2                         Generate SH2 code
+  -m2a                        Generate SH2a code
+  -m2a-nofpu                  Generate SH2a FPU-less code
+  -m2a-single                 Generate default single-precision SH2a code
+  -m2a-single-only            Generate only single-precision SH2a code
+  -m2e                        Generate SH2e code
+  -m3                         Generate SH3 code
+  -m3e                        Generate SH3e code
+  -m4                         Generate SH4 code
+  -m4-100                     Generate SH4-100 code
+  -m4-100-nofpu               Generate SH4-100 FPU-less code
+  -m4-100-single              Generate default single-precision SH4-100 code
+  -m4-100-single-only         Generate only single-precision SH4-100 code
+  -m4-200                     Generate SH4-200 code
+  -m4-200-nofpu               Generate SH4-200 FPU-less code
+  -m4-200-single              Generate default single-precision SH4-200 code
+  -m4-200-single-only         Generate only single-precision SH4-200 code
+  -m4-300                     Generate SH4-300 code
+  -m4-300-nofpu               Generate SH4-300 FPU-less code
+  -m4-300-single              Generate default single-precision SH4-300 code
+  -m4-300-single-only         Generate only single-precision SH4-300 code
+  -m4-340                     Generate code for SH4 340 series (MMU/FPU-less)
+  -m4-400                     Generate code for SH4 400 series (MMU/FPU-less)
+  -m4-500                     Generate code for SH4 500 series (FPU-less).
+  -m4-nofpu                   Generate SH4 FPU-less code
+  -m4-single                  Generate default single-precision SH4 code
+  -m4-single-only             Generate only single-precision SH4 code
+  -m4a                        Generate SH4a code
+  -m4a-nofpu                  Generate SH4a FPU-less code
+  -m4a-single                 Generate default single-precision SH4a code
+  -m4a-single-only            Generate only single-precision SH4a code
+  -m4al                       Generate SH4al-dsp code
+  -mb                         Generate code in big endian mode
+  -mbigtable                  Generate 32-bit offsets in switch tables
+  -mbranch-cost=              Cost to assume for a branch insn
+  -mcbranchdi                 Enable cbranchdi4 pattern
+  -mcmpeqdi                   Emit cmpeqdi_t pattern even when -mcbranchdi and
+                              -mexpand-cbranchdi are in effect.
+  -mcut2-workaround           Enable SH5 cut2 workaround
+  -mdalign                    Align doubles at 64-bit boundaries
+  -mdiv=                      Division strategy, one of: call, call2, fp, inv,
+                              inv:minlat, inv20u, inv20l, inv:call, inv:call2,
+                              inv:fp, call-div1, call-fp, call-table
+  -mdivsi3_libfunc=           Specify name for 32 bit signed division function
+  -mexpand-cbranchdi          Expand cbranchdi4 pattern early into separate
+                              comparisons and branches.
+  -mfused-madd                Enable the use of the fused floating point
+                              multiply-accumulate operation
+  -mgettrcost=                Cost to assume for gettr insn
+  -mhitachi                   Follow Renesas (formerly Hitachi) / SuperH
+                              calling conventions
+  -mieee                      Increase the IEEE compliance for floating-point
+                              code
+  -minline-ic_invalidate      inline code to invalidate instruction cache
+                              entries after setting up nested function
+                              trampolines
+  -misize                     Annotate assembler instructions with estimated
+                              addresses
+  -ml                         Generate code in little endian mode
+  -mnomacsave                 Mark MAC register as call-clobbered
+  -mpadstruct                 Make structs a multiple of 4 bytes (warning: ABI
+                              altered)
+  -mprefergot                 Emit function-calls using global offset table
+                              when generating PIC
+  -mpretend-cmove             Pretend a branch-around-a-move is a conditional
+                              move.
+  -mrelax                     Shorten address references during linking
+  -mrenesas                   Follow Renesas (formerly Hitachi) / SuperH
+                              calling conventions
+  -mspace                     Deprecated. Use -Os instead
+  -multcost=                  Cost to assume for a multiply insn
+  -musermode                  Don't generate privileged-mode only code; implies
+                              -mno-inline-ic_invalidate if the inline code
+                              would not work in user mode.
+
+SH options:
+--little		generate little endian code
+--big			generate big endian code
+--relax			alter jump instructions for long displacements
+--renesas		disable optimization with section symbol for
+			compatibility with Renesas assembler.
+--small			align sections to 4 byte boundaries, not 16
+--dsp			enable sh-dsp insns, and disable floating-point ISAs.
+--allow-reg-prefix	allow '$' as a register name prefix.
+--isa=[any		use most appropriate isa
+    | dsp               same as '-dsp'
+    | fp
+    | sh
+    | sh-up
+    | sh2
+    | sh2-up
+    | sh2e
+    | sh2e-up
+    | sh-dsp
+    | sh-dsp-up
+    | sh3
+    | sh3-up
+    | sh3-nommu
+    | sh3-nommu-up
+    | sh3-dsp
+    | sh3-dsp-up
+    | sh3e
+    | sh3e-up
+    | sh4
+    | sh4-up
+    | sh4a
+    | sh4a-up
+    | sh4al-dsp
+    | sh4al-dsp-up
+    | sh4-nofpu
+    | sh4-nofpu-up
+    | sh4-nommu-nofpu
+    | sh4-nommu-nofpu-up
+    | sh4a-nofpu
+    | sh4a-nofpu-up
+    | sh2a
+    | sh2a-up
+    | sh2a-nofpu
+    | sh2a-nofpu-up
+    | sh2a-nofpu-or-sh4-nommu-nofpu
+    | sh2a-nofpu-or-sh4-nommu-nofpu-up
+    | sh2a-nofpu-or-sh3-nommu
+    | sh2a-nofpu-or-sh3-nommu-up
+    | sh2a-or-sh4
+    | sh2a-or-sh4-up
+    | sh2a-or-sh3e
+    | sh2a-or-sh3e-up]
+
+Linker options
+==============
+
+Use "-Wl,OPTION" to pass "OPTION" to the linker.
+
+shelf: 
+  --build-id[=STYLE]	Generate build ID note
+  -Bgroup		Selects group name lookup rules for DSO
+  --disable-new-dtags	Disable new dynamic tags
+  --enable-new-dtags	Enable new dynamic tags
+  --eh-frame-hdr	Create .eh_frame_hdr section
+  --hash-style=STYLE	Set hash style to sysv, gnu or both
+  -z combreloc		Merge dynamic relocs into one section and sort
+  -z defs		Report unresolved symbols in object files.
+  -z execstack		Mark executable as requiring executable stack
+  -z initfirst		Mark DSO to be initialized first at runtime
+  -z interpose		Mark object to interpose all DSOs but executable
+  -z lazy		Mark object lazy runtime binding (default)
+  -z loadfltr		Mark object requiring immediate process
+  -z muldefs		Allow multiple definitions
+  -z nocombreloc	Don't merge dynamic relocs into one section
+  -z nocopyreloc	Don't create copy relocs
+  -z nodefaultlib	Mark object not to use default search paths
+  -z nodelete		Mark DSO non-deletable at runtime
+  -z nodlopen		Mark DSO not available to dlopen
+  -z nodump		Mark DSO not available to dldump
+  -z noexecstack	Mark executable as not requiring executable stack
+  -z now		Mark object non-lazy runtime binding
+  -z origin		Mark object requiring immediate $ORIGIN processing
+			  at runtime
+  -z max-page-size=SIZE	Set maximum page size to SIZE
+  -z common-page-size=SIZE
+			Set common page size to SIZE
+  -z KEYWORD		Ignored for Solaris compatibility
+shlelf: 
+  --build-id[=STYLE]	Generate build ID note
+  -Bgroup		Selects group name lookup rules for DSO
+  --disable-new-dtags	Disable new dynamic tags
+  --enable-new-dtags	Enable new dynamic tags
+  --eh-frame-hdr	Create .eh_frame_hdr section
+  --hash-style=STYLE	Set hash style to sysv, gnu or both
+  -z combreloc		Merge dynamic relocs into one section and sort
+  -z defs		Report unresolved symbols in object files.
+  -z execstack		Mark executable as requiring executable stack
+  -z initfirst		Mark DSO to be initialized first at runtime
+  -z interpose		Mark object to interpose all DSOs but executable
+  -z lazy		Mark object lazy runtime binding (default)
+  -z loadfltr		Mark object requiring immediate process
+  -z muldefs		Allow multiple definitions
+  -z nocombreloc	Don't merge dynamic relocs into one section
+  -z nocopyreloc	Don't create copy relocs
+  -z nodefaultlib	Mark object not to use default search paths
+  -z nodelete		Mark DSO non-deletable at runtime
+  -z nodlopen		Mark DSO not available to dlopen
+  -z nodump		Mark DSO not available to dldump
+  -z noexecstack	Mark executable as not requiring executable stack
+  -z now		Mark object non-lazy runtime binding
+  -z origin		Mark object requiring immediate $ORIGIN processing
+			  at runtime
+  -z max-page-size=SIZE	Set maximum page size to SIZE
+  -z common-page-size=SIZE
+			Set common page size to SIZE
+  -z KEYWORD		Ignored for Solaris compatibility
+$ 
+$ 
+       SH Options
+
+       These -m options are defined for the SH implementations:
+
+       -m1 Generate code for the SH1.
+
+       -m2 Generate code for the SH2.
+
+       -m2e
+           Generate code for the SH2e.
+
+       -m3 Generate code for the SH3.
+
+       -m3e
+           Generate code for the SH3e.
+
+       -m4-nofpu
+           Generate code for the SH4 without a floating-point unit.
+
+       -m4-single-only
+           Generate code for the SH4 with a floating-point unit that only sup-
+           ports single-precision arithmetic.
+
+       -m4-single
+           Generate code for the SH4 assuming the floating-point unit is in
+           single-precision mode by default.
+
+       -m4 Generate code for the SH4.
+
+       -m4a-nofpu
+           Generate code for the SH4al-dsp, or for a SH4a in such a way that
+           the floating-point unit is not used.
+
+       -m4a-single-only
+           Generate code for the SH4a, in such a way that no double-precision
+           floating point operations are used.
+
+       -m4a-single
+           Generate code for the SH4a assuming the floating-point unit is in
+           single-precision mode by default.
+
+       -m4a
+           Generate code for the SH4a.
+
+       -m4al
+           Same as -m4a-nofpu, except that it implicitly passes -dsp to the
+           assembler.  GCC doesn't generate any DSP instructions at the
+           moment.
+
+       -mb Compile code for the processor in big endian mode.
+
+       -ml Compile code for the processor in little endian mode.
+
+       -mdalign
+           Align doubles at 64-bit boundaries.  Note that this changes the
+           calling conventions, and thus some functions from the standard C
+           library will not work unless you recompile it first with -mdalign.
+
+       -mrelax
+           Shorten some address references at link time, when possible; uses
+           the linker option -relax.
+
+       -mbigtable
+           Use 32-bit offsets in "switch" tables.  The default is to use
+           16-bit offsets.
+
+       -mfmovd
+           Enable the use of the instruction "fmovd".
+
+       -mhitachi
+           Comply with the calling conventions defined by Renesas.
+
+       -mrenesas
+           Comply with the calling conventions defined by Renesas.
+
+       -mno-renesas
+           Comply with the calling conventions defined for GCC before the
+           Renesas conventions were available.  This option is the default for
+           all targets of the SH toolchain except for sh-symbianelf.
+
+       -mnomacsave
+           Mark the "MAC" register as call-clobbered, even if -mhitachi is
+           given.
+
+       -mieee
+           Increase IEEE-compliance of floating-point code.  At the moment,
+           this is equivalent to -fno-finite-math-only.  When generating 16
+           bit SH opcodes, getting IEEE-conforming results for comparisons of
+           NANs / infinities incurs extra overhead in every floating point
+           comparison, therefore the default is set to -ffinite-math-only.
+
+       -misize
+           Dump instruction size and location in the assembly code.
+
+       -mpadstruct
+           This option is deprecated.  It pads structures to multiple of 4
+           bytes, which is incompatible with the SH ABI.
+
+       -mspace
+           Optimize for space instead of speed.  Implied by -Os.
+
+       -mprefergot
+           When generating position-independent code, emit function calls
+           using the Global Offset Table instead of the Procedure Linkage Ta-
+           ble.
+
+       -musermode
+           Generate a library function call to invalidate instruction cache
+           entries, after fixing up a trampoline.  This library function call
+           doesn't assume it can write to the whole memory address space.
+           This is the default when the target is "sh-*-linux*".
+
+       -multcost=number
+           Set the cost to assume for a multiply insn.
+
+       -mdiv=strategy
+           Set the division strategy to use for SHmedia code.  strategy must
+           be one of: call, call2, fp, inv, inv:minlat, inv20u, inv20l,
+           inv:call, inv:call2, inv:fp .  "fp" performs the operation in
+           floating point.  This has a very high latency, but needs only a few
+           instructions, so it might be a good choice if your code has enough
+           easily exploitable ILP to allow the compiler to schedule the float-
+           ing point instructions together with other instructions.  Division
+           by zero causes a floating point exception.  "inv" uses integer
+           operations to calculate the inverse of the divisor, and then multi-
+           plies the dividend with the inverse.  This strategy allows cse and
+           hoisting of the inverse calculation.  Division by zero calculates
+           an unspecified result, but does not trap.  "inv:minlat" is a vari-
+           ant of "inv" where if no cse / hoisting opportunities have been
+           found, or if the entire operation has been hoisted to the same
+           place, the last stages of the inverse calculation are intertwined
+           with the final multiply to reduce the overall latency, at the
+           expense of using a few more instructions, and thus offering fewer
+           scheduling opportunities with other code.  "call" calls a library
+           function that usually implements the inv:minlat strategy.  This
+           gives high code density for m5-*media-nofpu compilations.  "call2"
+           uses a different entry point of the same library function, where it
+           assumes that a pointer to a lookup table has already been set up,
+           which exposes the pointer load to cse / code hoisting optimiza-
+           tions.  "inv:call", "inv:call2" and "inv:fp" all use the "inv"
+           algorithm for initial code generation, but if the code stays unop-
+           timized, revert to the "call", "call2", or "fp" strategies, respec-
+           tively.  Note that the potentially-trapping side effect of division
+           by zero is carried by a separate instruction, so it is possible
+           that all the integer instructions are hoisted out, but the marker
+           for the side effect stays where it is.  A recombination to fp oper-
+           ations or a call is not possible in that case.  "inv20u" and
+           "inv20l" are variants of the "inv:minlat" strategy.  In the case
+           that the inverse calculation was nor separated from the multiply,
+           they speed up division where the dividend fits into 20 bits (plus
+           sign where applicable), by inserting a test to skip a number of
+           operations in this case; this test slows down the case of larger
+           dividends.  inv20u assumes the case of a such a small dividend to
+           be unlikely, and inv20l assumes it to be likely.
+
+       -mdivsi3_libfunc=name
+           Set the name of the library function used for 32 bit signed divi-
+           sion to name.  This only affect the name used in the call and
+           inv:call division strategies, and the compiler will still expect
+           the same sets of input/output/clobbered registers as if this option
+           was not present.
+
+       -madjust-unroll
+           Throttle unrolling to avoid thrashing target registers.  This
+           option only has an effect if the gcc code base supports the TAR-
+           GET_ADJUST_UNROLL_MAX target hook.
+
+       -mindexed-addressing
+           Enable the use of the indexed addressing mode for SHmedia32/SHcom-
+           pact.  This is only safe if the hardware and/or OS implement 32 bit
+           wrap-around semantics for the indexed addressing mode.  The archi-
+           tecture allows the implementation of processors with 64 bit MMU,
+           which the OS could use to get 32 bit addressing, but since no cur-
+           rent hardware implementation supports this or any other way to make
+           the indexed addressing mode safe to use in the 32 bit ABI, the
+           default is -mno-indexed-addressing.
+
+       -mgettrcost=number
+           Set the cost assumed for the gettr instruction to number.  The
+           default is 2 if -mpt-fixed is in effect, 100 otherwise.
+
+       -mpt-fixed
+           Assume pt* instructions won't trap.  This will generally generate
+           better scheduled code, but is unsafe on current hardware.  The cur-
+           rent architecture definition says that ptabs and ptrel trap when
+           the target anded with 3 is 3.  This has the unintentional effect of
+           making it unsafe to schedule ptabs / ptrel before a branch, or
+           hoist it out of a loop.  For example, __do_global_ctors, a part of
+           libgcc that runs constructors at program startup, calls functions
+           in a list which is delimited by -1.  With the -mpt-fixed option,
+           the ptabs will be done before testing against -1.  That means that
+           all the constructors will be run a bit quicker, but when the loop
+           comes to the end of the list, the program crashes because ptabs
+           loads -1 into a target register.  Since this option is unsafe for
+           any hardware implementing the current architecture specification,
+           the default is -mno-pt-fixed.  Unless the user specifies a specific
+           cost with -mgettrcost, -mno-pt-fixed also implies -mgettrcost=100;
+           this deters register allocation using target registers for storing
+           ordinary integers.
+
+       -minvalid-symbols
+           Assume symbols might be invalid.  Ordinary function symbols gener-
+           ated by the compiler will always be valid to load with
+           movi/shori/ptabs or movi/shori/ptrel, but with assembler and/or
+           linker tricks it is possible to generate symbols that will cause
+           ptabs / ptrel to trap.  This option is only meaningful when
+           -mno-pt-fixed is in effect.  It will then prevent cross-basic-block
+           cse, hoisting and most scheduling of symbol loads.  The default is
+           -mno-invalid-symbols.
+
+
+File: as.info,  Node: SH-Dependent,  Next: SH64-Dependent,  Prev: MSP430-Dependent,  Up: Machine Dependencies
+
+8.28 Renesas / SuperH SH Dependent Features
+===========================================
+
+* Menu:
+
+* SH Options::              Options
+* SH Syntax::               Syntax
+* SH Floating Point::       Floating Point
+* SH Directives::           SH Machine Directives
+* SH Opcodes::              Opcodes
+
+
+File: as.info,  Node: SH Options,  Next: SH Syntax,  Up: SH-Dependent
+
+8.28.1 Options
+--------------
+
+`as' has following command-line options for the Renesas (formerly
+Hitachi) / SuperH SH family.
+
+`--little'
+     Generate little endian code.
+
+`--big'
+     Generate big endian code.
+
+`--relax'
+     Alter jump instructions for long displacements.
+
+`--small'
+     Align sections to 4 byte boundaries, not 16.
+
+`--dsp'
+     Enable sh-dsp insns, and disable sh3e / sh4 insns.
+
+`--renesas'
+     Disable optimization with section symbol for compatibility with
+     Renesas assembler.
+
+`--allow-reg-prefix'
+     Allow '$' as a register name prefix.
+
+`--isa=sh4 | sh4a'
+     Specify the sh4 or sh4a instruction set.
+
+`--isa=dsp'
+     Enable sh-dsp insns, and disable sh3e / sh4 insns.
+
+`--isa=fp'
+     Enable sh2e, sh3e, sh4, and sh4a insn sets.
+
+`--isa=all'
+     Enable sh1, sh2, sh2e, sh3, sh3e, sh4, sh4a, and sh-dsp insn sets.
+
+
+
+File: as.info,  Node: SH Syntax,  Next: SH Floating Point,  Prev: SH Options,  Up: SH-Dependent
+
+8.28.2 Syntax
+-------------
+
+* Menu:
+
+* SH-Chars::                Special Characters
+* SH-Regs::                 Register Names
+* SH-Addressing::           Addressing Modes
+
+
+File: as.info,  Node: SH-Chars,  Next: SH-Regs,  Up: SH Syntax
+
+8.28.2.1 Special Characters
+...........................
+
+`!' is the line comment character.
+
+   You can use `;' instead of a newline to separate statements.
+
+   Since `$' has no special meaning, you may use it in symbol names.
+
+
+File: as.info,  Node: SH-Regs,  Next: SH-Addressing,  Prev: SH-Chars,  Up: SH Syntax
+
+8.28.2.2 Register Names
+.......................
+
+You can use the predefined symbols `r0', `r1', `r2', `r3', `r4', `r5',
+`r6', `r7', `r8', `r9', `r10', `r11', `r12', `r13', `r14', and `r15' to
+refer to the SH registers.
+
+   The SH also has these control registers:
+
+`pr'
+     procedure register (holds return address)
+
+`pc'
+     program counter
+
+`mach'
+`macl'
+     high and low multiply accumulator registers
+
+`sr'
+     status register
+
+`gbr'
+     global base register
+
+`vbr'
+     vector base register (for interrupt vectors)
+
+
+File: as.info,  Node: SH-Addressing,  Prev: SH-Regs,  Up: SH Syntax
+
+8.28.2.3 Addressing Modes
+.........................
+
+`as' understands the following addressing modes for the SH.  `RN' in
+the following refers to any of the numbered registers, but _not_ the
+control registers.
+
+`RN'
+     Register direct
+
+`@RN'
+     Register indirect
+
+`@-RN'
+     Register indirect with pre-decrement
+
+`@RN+'
+     Register indirect with post-increment
+
+`@(DISP, RN)'
+     Register indirect with displacement
+
+`@(R0, RN)'
+     Register indexed
+
+`@(DISP, GBR)'
+     `GBR' offset
+
+`@(R0, GBR)'
+     GBR indexed
+
+`ADDR'
+`@(DISP, PC)'
+     PC relative address (for branch or for addressing memory).  The
+     `as' implementation allows you to use the simpler form ADDR
+     anywhere a PC relative address is called for; the alternate form
+     is supported for compatibility with other assemblers.
+
+`#IMM'
+     Immediate data
+
+
+File: as.info,  Node: SH Floating Point,  Next: SH Directives,  Prev: SH Syntax,  Up: SH-Dependent
+
+8.28.3 Floating Point
+---------------------
+
+SH2E, SH3E and SH4 groups have on-chip floating-point unit (FPU). Other
+SH groups can use `.float' directive to generate IEEE floating-point
+numbers.
+
+   SH2E and SH3E support single-precision floating point calculations as
+well as entirely PCAPI compatible emulation of double-precision
+floating point calculations. SH2E and SH3E instructions are a subset of
+the floating point calculations conforming to the IEEE754 standard.
+
+   In addition to single-precision and double-precision floating-point
+operation capability, the on-chip FPU of SH4 has a 128-bit graphic
+engine that enables 32-bit floating-point data to be processed 128 bits
+at a time. It also supports 4 * 4 array operations and inner product
+operations. Also, a superscalar architecture is employed that enables
+simultaneous execution of two instructions (including FPU
+instructions), providing performance of up to twice that of
+conventional architectures at the same frequency.
+
+
+File: as.info,  Node: SH Directives,  Next: SH Opcodes,  Prev: SH Floating Point,  Up: SH-Dependent
+
+8.28.4 SH Machine Directives
+----------------------------
+
+`uaword'
+`ualong'
+     `as' will issue a warning when a misaligned `.word' or `.long'
+     directive is used.  You may use `.uaword' or `.ualong' to indicate
+     that the value is intentionally misaligned.
+
+
+File: as.info,  Node: SH Opcodes,  Prev: SH Directives,  Up: SH-Dependent
+
+8.28.5 Opcodes
+--------------
+
+For detailed information on the SH machine instruction set, see
+`SH-Microcomputer User's Manual' (Renesas) or `SH-4 32-bit CPU Core
+Architecture' (SuperH) and `SuperH (SH) 64-Bit RISC Series' (SuperH).
+
+   `as' implements all the standard SH opcodes.  No additional
+pseudo-instructions are needed on this family.  Note, however, that
+because `as' supports a simpler form of PC-relative addressing, you may
+simply write (for example)
+
+     mov.l  bar,r0
+
+where other assemblers might require an explicit displacement to `bar'
+from the program counter:
+
+     mov.l  @(DISP, PC)
+
+   Here is a summary of SH opcodes:
+
+     Legend:
+     Rn        a numbered register
+     Rm        another numbered register
+     #imm      immediate data
+     disp      displacement
+     disp8     8-bit displacement
+     disp12    12-bit displacement
+
+     add #imm,Rn                    lds.l @Rn+,PR
+     add Rm,Rn                      mac.w @Rm+,@Rn+
+     addc Rm,Rn                     mov #imm,Rn
+     addv Rm,Rn                     mov Rm,Rn
+     and #imm,R0                    mov.b Rm,@(R0,Rn)
+     and Rm,Rn                      mov.b Rm,@-Rn
+     and.b #imm,@(R0,GBR)           mov.b Rm,@Rn
+     bf disp8                       mov.b @(disp,Rm),R0
+     bra disp12                     mov.b @(disp,GBR),R0
+     bsr disp12                     mov.b @(R0,Rm),Rn
+     bt disp8                       mov.b @Rm+,Rn
+     clrmac                         mov.b @Rm,Rn
+     clrt                           mov.b R0,@(disp,Rm)
+     cmp/eq #imm,R0                 mov.b R0,@(disp,GBR)
+     cmp/eq Rm,Rn                   mov.l Rm,@(disp,Rn)
+     cmp/ge Rm,Rn                   mov.l Rm,@(R0,Rn)
+     cmp/gt Rm,Rn                   mov.l Rm,@-Rn
+     cmp/hi Rm,Rn                   mov.l Rm,@Rn
+     cmp/hs Rm,Rn                   mov.l @(disp,Rn),Rm
+     cmp/pl Rn                      mov.l @(disp,GBR),R0
+     cmp/pz Rn                      mov.l @(disp,PC),Rn
+     cmp/str Rm,Rn                  mov.l @(R0,Rm),Rn
+     div0s Rm,Rn                    mov.l @Rm+,Rn
+     div0u                          mov.l @Rm,Rn
+     div1 Rm,Rn                     mov.l R0,@(disp,GBR)
+     exts.b Rm,Rn                   mov.w Rm,@(R0,Rn)
+     exts.w Rm,Rn                   mov.w Rm,@-Rn
+     extu.b Rm,Rn                   mov.w Rm,@Rn
+     extu.w Rm,Rn                   mov.w @(disp,Rm),R0
+     jmp @Rn                        mov.w @(disp,GBR),R0
+     jsr @Rn                        mov.w @(disp,PC),Rn
+     ldc Rn,GBR                     mov.w @(R0,Rm),Rn
+     ldc Rn,SR                      mov.w @Rm+,Rn
+     ldc Rn,VBR                     mov.w @Rm,Rn
+     ldc.l @Rn+,GBR                 mov.w R0,@(disp,Rm)
+     ldc.l @Rn+,SR                  mov.w R0,@(disp,GBR)
+     ldc.l @Rn+,VBR                 mova @(disp,PC),R0
+     lds Rn,MACH                    movt Rn
+     lds Rn,MACL                    muls Rm,Rn
+     lds Rn,PR                      mulu Rm,Rn
+     lds.l @Rn+,MACH                neg Rm,Rn
+     lds.l @Rn+,MACL                negc Rm,Rn
+
+     nop                            stc VBR,Rn
+     not Rm,Rn                      stc.l GBR,@-Rn
+     or #imm,R0                     stc.l SR,@-Rn
+     or Rm,Rn                       stc.l VBR,@-Rn
+     or.b #imm,@(R0,GBR)            sts MACH,Rn
+     rotcl Rn                       sts MACL,Rn
+     rotcr Rn                       sts PR,Rn
+     rotl Rn                        sts.l MACH,@-Rn
+     rotr Rn                        sts.l MACL,@-Rn
+     rte                            sts.l PR,@-Rn
+     rts                            sub Rm,Rn
+     sett                           subc Rm,Rn
+     shal Rn                        subv Rm,Rn
+     shar Rn                        swap.b Rm,Rn
+     shll Rn                        swap.w Rm,Rn
+     shll16 Rn                      tas.b @Rn
+     shll2 Rn                       trapa #imm
+     shll8 Rn                       tst #imm,R0
+     shlr Rn                        tst Rm,Rn
+     shlr16 Rn                      tst.b #imm,@(R0,GBR)
+     shlr2 Rn                       xor #imm,R0
+     shlr8 Rn                       xor Rm,Rn
+     sleep                          xor.b #imm,@(R0,GBR)
+     stc GBR,Rn                     xtrct Rm,Rn
+     stc SR,Rn
+
+----------------------------------------------------------------------
+リーディングアンダースコア
+引数は4つまでレジスタ渡し、それ以降はスタックに積む。
+
+R0-R1 関数の返り値 (caller saved)
+R2-R3 スクラッチ (caller saved)
+R4-R7 関数の引数 (caller saved)
+R8-R13 callee saved.
+R14 フレームポインタ (callee saved)
+R15 スタックポインタ (callee saved)
+
+FPU1 caller saved
+FR0-FR3 関数の返り値
+FR4-FR11 関数の引数
+FR12-FR15 callee saved
+
+gcc-4.3.2/gcc/config/sh/sh.hより。
+
+/* Register allocation for the Renesas calling convention:
+
+        r0		arg return
+	r1..r3          scratch
+	r4..r7		args in
+	r8..r13		call saved
+	r14		frame pointer/call saved
+	r15		stack pointer
+	ap		arg pointer (doesn't really exist, always eliminated)
+	pr		subroutine return address
+	t               t bit
+	mach		multiply/accumulate result, high part
+	macl		multiply/accumulate result, low part.
+	fpul		fp/int communication register
+	rap		return address pointer register
+	fr0		fp arg return
+	fr1..fr3	scratch floating point registers
+	fr4..fr11	fp args in
+	fr12..fr15	call saved floating point registers  */
+
+----------------------------------------------------------------------
+
+ -mrenesas Comply with the calling conventions defined by Renesas.
+
+Renesas saves and restores mac registers on call.
+
+The multiply instructions and multiply/accumulate instructions store
+results in the MAC register.
+
+ -mnomacsave Mark the "MAC" register as call-clobbered, even if
+  -mhitachi is given.
+
+MACレジスタをcallee-savedにするかcaller-savedにするか。gccデフォルトだと
+caller-saved(call-clobbered)。-mrenesas(-mhitachi)にするとcallee-saved.
+
+
+/* sh-elf-gcc -O -S -fomit-frame-pointer a.c */
+int
+a (int a0, int a1, int a2, int a3)
+{
+
+  return a0 + a1 + a2 - a3;
+}
+
+int
+c (int a0, int a1, int a2, int a3, int a4)
+{
+
+  return a0 + a1 + a2 - a3 + a4;
+}
+
+int
+b ()
+{
+  a (0, 1, 2, 3);
+  return c (0, 1, 2, 3, 4);
+}
+
+int
+main ()
+{
+
+  return a (0xaa55, 4, 3, 2);
+}
+
+	.file	"a.c"
+	.text
+	.text
+	.align 1
+	.global	_a
+	.type	_a, @function
+_a:
+	mov	r5,r0
+	add	r4,r0
+	add	r6,r0
+	rts	
+	sub	r7,r0
+	.size	_a, .-_a
+	.align 1
+	.global	_c
+	.type	_c, @function
+_c:
+	mov	r5,r0
+	add	r4,r0
+	add	r6,r0
+	mov.l	@r15,r1
+	add	r1,r0
+	rts	
+	sub	r7,r0
+	.size	_c, .-_c
+	.align 1
+	.global	_b
+	.type	_b, @function
+_b:
+	sts.l	pr,@-r15
+	add	#-4,r15
+	mov	#4,r1
+	mov.l	r1,@r15
+	mov	#0,r4
+	mov	#1,r5
+	mov	#2,r6
+	mov.l	.L7,r0
+	jsr	@r0
+	mov	#3,r7
+	add	#4,r15
+	lds.l	@r15+,pr
+	rts	
+	nop
+.L8:
+	.align 2
+.L7:
+	.long	_c
+	.size	_b, .-_b
+	.align 1
+	.global	_main
+	.type	_main, @function
+_main:
+	sts.l	pr,@-r15
+	mov.l	.L11,r4
+	mov	#4,r5
+	mov	#3,r6
+	mov.l	.L12,r0
+	jsr	@r0
+	mov	#2,r7
+	lds.l	@r15+,pr
+	rts	
+	nop
+.L13:
+	.align 2
+.L11:
+	.long	43605
+.L12:
+	.long	_a
+	.size	_main, .-_main
+	.ident	"GCC: (GNU) 4.3.2"

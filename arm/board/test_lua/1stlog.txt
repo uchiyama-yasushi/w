@@ -1,0 +1,47 @@
+$ tip umon230400
+connected
+0x4000fff0
+ROM data: 0x20f90-0x211bc
+RAM data: 0x40000000-0x4000022c 556byte
+bss: 0x4000022c-0x40000344 280byte
+current stack=0x4000ffe4
+Clock: IRC, PLL NOT connected, PLL MSEL:0 NSEL:0, CCLKCFG 0
+Clock: MAIN, PLL connected, PLL MSEL:11 NSEL:0, CCLKCFG 3
+sysclock:288000000Hz cpuclock:72000000Hz
+PCLK0: 0, PCLK1: 0 PCONP: 4280ffe
+bss RAM check passed.
+user> elp
+user> help
+avaliable command: help reset test 
+user> test
+sbrk:base=0x40000344 size=8
+sbrk:base=0x4000034c size=1024
+sbrk:base=0x4000074c size=1024
+sbrk:base=0x40000b4c size=1024
+sbrk:base=0x40000f4c size=1024
+sbrk:base=0x4000134c size=1024
+sbrk:base=0x4000174c size=1024
+sbrk:base=0x40001b4c size=1024
+sbrk:base=0x40001f4c size=2048
+sbrk:base=0x4000274c size=1024
+sbrk:base=0x40002b4c size=1024
+sbrk:base=0x40002f4c size=1024
+sbrk:base=0x4000334c size=2048
+sbrk:base=0x40003b4c size=1024
+Lua 5.1.4  Copyright (C) 1994-2008 Lua.org, PUC-Rio
+> 
+> x=3
+sbrk:base=0x40003f4c size=1024
+stdin:1: unexpected symbol near 'char(8)'
+> x=3
+> print "hello"
+hello
+> y=12
+sbrk:base=0x4000434c size=1024
+> z=y/x
+> io.write ("hello",x,y,z,"world\n");
+sbrk:base=0x4000474c size=1024
+fwrite
+hello3124fwrite
+world
+> 

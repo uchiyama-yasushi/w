@@ -1,0 +1,63 @@
+まずはタイマ割り込み
+
+SH7785のタイマは6チャネル。このくらいあると便利だ。32bitのダウンカウン
+タ。アンダーフローで割り込み。インプットキャプチャ機能がチャネル2につい
+ているだけ。タイマカウンタはは外部入力じゃない場合はカウンタの更新は
+PCLKの分周のみ。
+
+割り込みコントローラでは、割り込み要因のマスク、優先度の設定をしない
+と割り込みがあがらない。
+
+内部割り込みのマスクの指定はINT2MSKRとINT2MSKCR。それぞれのレジスタの対
+応するビットに1を書くことで、マスク/アンマスクを設定する。(0書いても無
+効)
+
+#define	INT2MSKR	((volatile uint32_t *)0xffd40038)
+  *INT2MSKR = 1;	// mask TMU0-2
+#define	INT2MSKCR	((volatile uint32_t *)0xffd4003c)
+  *INT2MSKCR = 1;	// unmask TMU0-2
+
+そして、CPUのIMASKにあたる優先度を設定する。IMASKは4bitに対してこの指定
+は5bit。下位1bitはINTCの中での優先度に使われる。CPUのIMASKとして使われ
+るのは上位4bitになる。優先度は値が小さい程低い。
+
+#define	INT2PRI0	((volatile uint32_t *)0xffd40000)
+  *INT2PRI0 = 0x1f000000;// TMU0 highest priority.
+  iprintf ("INTC: %x %x\n", *INT2MSKR, *INT2PRI0);
+
+割り込みハンドラを設定。
+  // Install default interrupt handler.(place holder)
+  exception_init ();
+  // Install TMU0 interrupt handler.
+TMU0の割り込みのINTEVCは0x580。INTEVCは0x20ごとの設定で、0x1c0-0xfe0の範囲
+なので、8で割った値をインデックスとして配列にしました。
+  intr_table[0x580 >> 3] = tmu0_intr;
+
+例外を有効に。
+  exception_enable ();
+割り込みを有効に。
+  intr_enable ();
+
+4段階(INTC mask, INTC priority, SR.IMASK, SR.BL)で割り込みの制御がある。
+
+タイマの設定は
+
+  *TSTR0 &= ~1;	// Stop TMU0
+  *TCNT0 = 0xffff;
+  *TCOR0 = 0xffff;
+  *TCR0 = 4 | (1 << 5);	// PCK/1024 | Underflow interrupt enable.
+  *TSTR0 |= 1;	// Start TMU0
+
+この程度。0xffffからPCK/1024でカウントダウンしていき、0でアンダフロー。
+そしてTCOR0の0xffffがまたTCNT0に設定されてカウントダウン。
+
+割り込みハンドラはアンダーフローのフラグをクリア。
+void
+tmu0_intr ()
+{
+  iprintf ("%s\n", __FUNCTION__);
+
+  *TCR0 &= ~(1 << 8);	// Clear underflow.
+}
+
+これでPCLK/1024 * 0xffffごとに割り込みが入る。

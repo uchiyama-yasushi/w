@@ -1,0 +1,60 @@
+OUTPUT_FORMAT ("elf32-h8300")
+OUTPUT_ARCH (h8300:h8300h)
+
+/* uch's development machine 01 special */
+
+MEMORY
+{
+	start_vector	: o = 0xfdf10, l = 0x4
+	intvecs		: o = 0xfdf2c, l = 0xd8
+	/* AREA4, AREA5 reserve rom monitor space 0x1000 */
+/*	extram		: o = 0x80000, l = 0x3f000 AREA4 + AREA5 */
+	extram		: o = 0x80000, l = 0x1e000 /*AREA4 only*/
+	/* AREA7 */
+	intram		: o = 0xfe100, l = 0x1e10
+}
+
+SECTIONS
+{
+	 _stack_start = 0x9dffc;	/* AREA4 */
+
+	 .start_vector :
+	 {
+	 	LONG (ABSOLUTE (start))
+	 } > start_vector
+
+	 .intvecs :
+	 {
+		*(.intvecs)
+	 } > intvecs
+
+	 .ctors :
+	 {
+		*(.ctors)
+	 } > extram
+
+	 .text :
+	 {
+	 	 *(.text*)
+		 *(.rodata*)
+		 . = ALIGN (4);
+	 } > extram	/* External RAM */
+
+	 .data :
+	 {
+	 	 _data_start = .;
+	 	 *(.data*)
+		 . = ALIGN (4);
+		  _data_end = .;
+	 } > extram	/* External SRAM */
+
+	 .bss :
+	 {
+	         _bss_start = .;
+	      	 *(.bss*)
+	 } > extram	/* Exteranal SRAM */
+	_bss_end = .;
+
+	/DISCARD/ : { *(.*debug*) }
+	/DISCARD/ : { *(.comment) }
+}

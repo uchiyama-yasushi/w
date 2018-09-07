@@ -1,0 +1,95 @@
+MMCカード。
+
+コマンドは6byte。最初がコマンド指定で、引数4byte(MSB 1st)、CRC7|ストッ
+プビット。コマンド指定が0x40|コマンドで0x80が落ちているのがスタートビッ
+トになる。CRC7|0x01にするのが、ストップビットになる。
+
+レスポンスはコマンドレスポンスに3種類、R1,R2(ステータスレジスタの
+み),R3(OCRのみ)。
+書き込みあとのレスポンスが2種類、データレスポンスとエラーレスポンス。
+レスポンスの区別は上位3bitで区別できる。
+
+コマンドとコマンドの間にはダミークロックが必要(8クロック)。CS#の状態は
+問わない。
+
+void
+md_mmc_activate ()
+{
+
+  md_mmc_putc (0xff);	//コマンドの前にダミークロックを入れることにした。
+  *PB_DR &= ~1;	// CS# Assert;
+  udelay (1);
+}
+
+void
+md_mmc_deactivate ()
+{
+
+  *PB_DR |= 1;	// CS# Deassert.
+}
+
+データパケットを共なうコマンド。
+bool
+__mmc_data_command (int command, uint32_t arg, uint8_t *buf, size_t n)
+{
+  size_t i;
+
+  md_mmc_activate ();
+  if (!__mmc_command (mmc_set_command (command, arg)))
+    return FALSE;
+// ここでデータトークンスタートバイト(0xfe)が送られてくるのを待ちます。
+  if (!__mmc_wait_data ())
+    return FALSE;
+
+  for (i = 0; i < n; i++)
+    {
+      buf[i] = md_mmc_getc ();
+    }
+// 最後にCRC16が送られてきます。
+  __mmc_data_crc ();
+  md_mmc_deactivate ();
+
+  return TRUE;
+}
+
+データパケットを送るコマンド
+bool
+__mmc_data_write_command (int command, uint32_t arg, uint8_t *buf, size_t n)
+{
+  size_t i;
+  uint8_t r;
+  bool done = FALSE;
+
+  md_mmc_activate ();
+  if (!__mmc_command (mmc_set_command (command, arg)))
+    return FALSE;
+//ダミークロック
+  md_mmc_putc (0xff);	// At least 1byte wait.
+
+//まずデータトークンスタートバイトを送ります。
+  // Data packet.
+  md_mmc_putc (0xfe);	//Data token start byte.
+  for (i = 0; i < n; i++)
+    {
+      md_mmc_putc (buf[i]);
+    }
+//SPIモードなのでCRCなし。
+  md_mmc_putc (0x00);	// Dummy CRC
+  md_mmc_putc (0x00);	// Dummy CRC
+  DPRINTF ("send done\n");
+//ここでレスポンスを待ちます。
+  r = __mmc_response ();
+//レスポンスは二種類あります。
+  if ((r & 0xe0) == 0)
+    __mmc_error_response (r);
+  else
+    done = __mmc_data_response (r);
+
+  //  iprintf ("%x\n", (uint32_t)r);
+//まだこの段階ではMMCカードは作業中。Doutが0xffになるまで待ちます。
+  __mmc_wait_busy ();
+
+  md_mmc_deactivate ();
+
+  return done;
+}

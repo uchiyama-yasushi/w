@@ -1,0 +1,31 @@
+all:	rom
+rom:
+	PROGRAM=ROM ${MAKE} build
+
+ROOT_DIR	= ../../..
+
+include ../../mk/3664.mk
+
+include ${MK_DIR}/objs.mk
+
+#
+CFLAGS += -DDEBUG -DSTATIC=
+#CFLAGS += -DTHREAD_STACKSIZE_DEFAULT=256
+#CFLAGS += -DTHREAD_DEBUG -DTHREAD_VERBOSE
+#CFLAGS += -DBUFFERD_CONSOLE_DISABLE
+#PROMPT_BUFFER_SIZE
+#PROMPT_HISTORY_MAX
+#SHELL_CMDARG_MAX
+#THREAD_PRIORITY_MAX
+
+H8OBJS += sci3.o timer_w.o timer_v.o timer_a.o
+
+KERNOBJS += ${KERN_CORE_OBJS} ${KERN_DELAY_OBJS} ${KERN_THREAD_OBJS}	\
+	${KERN_MONITOR_OBJS} ${KERN_TIMER_OBJS} ${KERN_SHELL_OBJS}	\
+	shell_command.o ${KERN_RINGBUF_OBJS} ${KERN_BUFCONSOLE_OBJS}
+
+LIBTYPE	= MINLIB
+OBJS = ${H8OBJS} ${KERNOBJS} tiny_thread_test.o timer_a_test.o
+
+include ${MK_DIR}/target.mk
+include ${MK_DIR}/utils.mk

@@ -1,0 +1,384 @@
+明示的なスレッドスイッチ。
+
+	.long	current_thread
+FUNC (do_thread_switch)
+	// save context.
+	mrs	r1,	cpsr
+	ldr	r0,	[pc, #-16]	// current_thread
+pc-16で上の.long current_threadを指定しているのはパイプラインが3段だから。
+	ldr	r0,	[r0]		// r0 = *current_thread
+	str	r1,	[r0], #4	// *r0++ = r1
+	stmia	r0!,	{r0-r15}	// 全部のレジスタ退避(r0-r3は余計)
+	str	lr,	[r0, #-4]	// overwrite PC to LR. *(r0 -4) = lr
+ここで退避されたPCはstrmia命令の2つ先。それを本来この関数が戻るべきアドレス
+(lr)に設定。
+
+	bl	thread_context_switch
+	ldr	r0,	[pc, #16]
+	ldr	r0,	[r0]
+	ldr	r1,	[r0], #4	// r1 = *r0++;
+	msr	cpsr_cf,r1		// restore all CPSR
+	ldmia	r0,	{r0-r15}
+ここでPCが更新されてジャンプするはず。
+	bl	md_thread_machdep_noreturn_assert	// for debug.
+しなかった時用のデバッグ。
+	.long	current_thread
+
+
+
+割り込みはARMの場合0x0-0x1cのに例外ベクタが配置される。LPC23XXの場合、
+MEMMAPレジスタ(0xe01fc040)の設定によって、この位置のフェッチが起きた場
+合に、フラッシュROMの0x0、フラッシュロムの0x7fffe000(ブートローダ)、内
+蔵SRAMの0x40000000、外部拡張RAMの、4つの場所をマップすることができる。
+
+リセット直後はブートローダがマップされているので、ブートローダのが使わ
+れ、ブートローダによってユーザプログラムに移行されるとフラッシュロムの
+0x0が使われるようになる。
+
+今はフラッシュロムに乗せたモニタによって0x40000000のSRAMにプログラム
+をロードしてプログラムを動かしている。このプログラムから割込みを使うの
+にはMEMMAPによって0x40000000を例外ベクタとするのが楽だ。
+
+ARMの分岐命令は+-32MBまでのオフセットなので、分岐命令では1G以上先の
+SRAMのプログラムには届かない。MEMMAPはベクタ位置の32byteじゃなく、その先の
+32byte、計64byteをマップしてくれるので、
+
+	.section	.vector, "ax"	// "A"llocate. e"X"ecute.
+	.align	2
+	.global	vector_table
+vector_table:
+	ldr	pc,	[pc, #24]
+	ldr	pc,	[pc, #24]
+	ldr	pc,	[pc, #24]
+	ldr	pc,	[pc, #24]
+	ldr	pc,	[pc, #24]
+	ldr	pc,	[pc, #24]
+	ldr	pc,	[pc, #24]
+	ldr	pc,	[pc, #24]
+	.long	start
+	.long	exception_und
+	.long	swi_handler
+	.long	exception_iabort
+	.long	exception_dabort
+	.long	0
+	.long	irq_handler
+	.long	fiq_handler
+
+のようにすることで32bitアドレスどこにでも分岐できるようになっている。
+
+ARMには実行モードによってレジスタバンクがあり、例外の発生とともに自動的
+に切り替わる。そのモードはSYS, SVC, UND, ABT, FIQ, IRQの6つがある。モー
+ドはさらにUSRがあるけれど、USRに例外で切り替わることはない。
+
+FIQ以外のモードにはR13(sp)とR14(lr)とSPSRがバンクとして用意されている。
+例外発生時には、CPSRをSPSRにコピーし、例外発生時のPCをR14にコピーし、例
+外ベクタに入る。
+例外ベクタに入った段階で、例外前のCPSR,R13,R14は切り替えられているので
+モードを変更しない以外アクセスできない。
+
+例外に入った時のR13は先にスタック位置を設定しておけば、そのまま実行できる。
+プログラムの最初で
+#define	CPU_MODE_SET(reg, mode)		\
+	mrs	reg,	cpsr;		\
+	orr	reg,	reg,	mode;	\
+	msr	cpsr_c,	reg
+
+	CPU_MODE_SET (r0, #0x13)	//SVC
+	ldr	sp,	[r1]
+	CPU_MODE_SET (r0, #0x17)	//ABT
+	ldr	sp,	[r1]
+	CPU_MODE_SET (r0, #0x1b)	//UND
+	ldr	sp,	[r1]
+	CPU_MODE_SET (r0, #0x11)	//FIQ
+	ldr	sp,	[r1]
+	CPU_MODE_SET (r0, #0x12)	//IRQ
+	ldr	sp,	[r1]
+	CPU_MODE_SET (r0, #0x1f)	//SYS
+	ldr	sp,	[r1]
+
+	b	machine_startup
+
+.Lstack_start:
+	.long	stack_start
+
+のように設定。全部同じスタック。machine_startupの後で実行はスレッドに移
+される。その際にスタックが変更されるので、この空いたブートストラップス
+タックを利用(SMPだとかちあうけれどこれはUP)。実装はIRQ、SWIはこのスタッ
+クを使わない。FIQだけこのスタック使うことにして、IRQ,SWIからのFIQのネス
+トをできるようにした。他のUND, ABTはここで中断なので、どこであろうとス
+タックがアクセスできればいい。
+
+方針は、FIQは割込み処理だけ。IRQは割込み終了後にスレッドの切り替え。
+
+gccは割込みハンドラ用のattributeを用意している。
+void irq (void) __attribute__ ((interrupt ("IRQ")));
+void fiq (void) __attribute__ ((interrupt ("FIQ")));
+void swi (void) __attribute__ ((interrupt ("SWI")));
+void abt (void) __attribute__ ((interrupt ("ABORT")));
+void undef (void) __attribute__ ((interrupt ("UNDEF")));
+
+
+void
+irq ()
+{
+}
+
+void
+fiq ()
+{
+}
+
+void
+swi ()
+{
+}
+
+void
+abt ()
+{
+}
+
+void
+undef ()
+{
+}
+
+これは
+
+	.file	"i.c"
+	.text
+	.align	2
+	.global	irq
+	.type	irq, %function
+irq:
+	@ Interrupt Service Routine.
+	@ args = 0, pretend = 0, frame = 0
+	@ frame_needed = 0, uses_anonymous_args = 0
+	@ link register save eliminated.
+	subs	pc, lr, #4
+	.size	irq, .-irq
+	.align	2
+	.global	fiq
+	.type	fiq, %function
+fiq:
+	@ Fast Interrupt Service Routine.
+	@ args = 0, pretend = 0, frame = 0
+	@ frame_needed = 0, uses_anonymous_args = 0
+	@ link register save eliminated.
+	subs	pc, lr, #4
+	.size	fiq, .-fiq
+	.align	2
+	.global	swi
+	.type	swi, %function
+swi:
+	@ ARM Exception Handler.
+	@ args = 0, pretend = 0, frame = 0
+	@ frame_needed = 0, uses_anonymous_args = 0
+	@ link register save eliminated.
+	movs	pc, lr
+	.size	swi, .-swi
+	.align	2
+	.global	abt
+	.type	abt, %function
+abt:
+	@ Interrupt Service Routine.
+	@ args = 0, pretend = 0, frame = 0
+	@ frame_needed = 0, uses_anonymous_args = 0
+	@ link register save eliminated.
+	subs	pc, lr, #4
+	.size	abt, .-abt
+	.align	2
+	.global	undef
+	.type	undef, %function
+undef:
+	@ ARM Exception Handler.
+	@ args = 0, pretend = 0, frame = 0
+	@ frame_needed = 0, uses_anonymous_args = 0
+	@ link register save eliminated.
+	movs	pc, lr
+	.size	undef, .-undef
+	.ident	"GCC: (GNU) 4.3.2"
+
+のようになる。リターンの仕方がsubs	pc, lr, #4か、movs	pc, lrかが
+ポイント。このabtはプリフェッチアボート用。データアボートの時はpc, lr, #8の
+はず。これがARMのレジスタバンクをきちんと使った例。
+
+IRQハンドラからスレッドスイッチをする関係から、IRQに入った所でスレッド
+スイッチ用の領域にコンテキストを設定するために、モードをSYSに変更します。
+これはSYSに変更しないと例外発生時のモードのR13,R14をアクセスできないの
+で。
+
+そして、IRQからの復帰時にはこのコンテキストからの全復帰で戻ります。
+
+	.balign 4
+.Lcurrent_thread:
+	.long	current_thread
+
+----------------------------------------------------------------------
+FIQ
+----------------------------------------------------------------------
+	.global	fiq_handler
+fiq_handler:
+	stmdb	r13!,	{r0-r7}
+FIQモードではR13,R14の他、R8-R12もレジスタバンクになるので退避するのは
+R0-R7だけでよい。
+STMDBなので、R13からプレ(B)デクリメント(D)してR0-R7を退避、r13!なの
+でこの命令の後のR13はr7をストアした所を差している。
+
+	// user code here
+ここにいずれハンドラを。
+
+	ldmia	r13!,	{r0-r7}
+LDMIA、R13の位置からポスト(A)インクリメント(I)で復帰してR0-R7を上方に復帰
+	subs	pc,	r14,	#4
+	b	md_thread_machdep_noreturn_assert	// for debug.
+
+----------------------------------------------------------------------
+IRQ
+----------------------------------------------------------------------
+	.global irq_handler
+irq_handler:
+この時点でIRQは禁止となるけれど、FIQは禁止とならない。が、FIQからスレッ
+ドをいじることはないのでFIQを禁止する必要はない。
+R13とR14はIRQモードのバンクに切り替わっている。R14には割り込まれた後に
+復帰すべきPCが入っている。R13は自由に使える。
+
+	adr	r13,	.Lcurrent_thread
+	ldr	r13,	[r13]
+	ldr	r13,	[r13]
+割り込まれたcurrent_threadをとります。この時点のR13が*current_thread。
+
+	// save r0-r12 (skip PSR area)
+	stmib	r13,	{r0-r12}
+STMIB、プレインクリメントでR0-R12を退避します。プレインクリメントなのは
+
+struct reg
+{
+  uint32_t psr;		// 0x00
+  uint32_t a1;		// 0x04
+  uint32_t a2;		// 0x08
+  uint32_t a3;		// 0x0c
+  uint32_t a4;		// 0x10
+  uint32_t v1;		// 0x14
+  uint32_t v2;		// 0x18
+  uint32_t v3;		// 0x1c
+  uint32_t v4;		// 0x20
+  uint32_t v5;		// 0x24
+  uint32_t v6;		// 0x28
+  uint32_t v7;		// 0x2c
+  uint32_t fp;		// 0x30
+  uint32_t ip;		// 0x34
+  uint32_t sp;		// 0x38
+  uint32_t lr;		// 0x3c
+  uint32_t pc;		// 0x40
+} __attribute__((packed)); //68Byte
+
+なので。PSRの位置をスキップして、a1の位置からロード。r13に'!'がつかない
+のでr13の値はインクリメントされず、*current_threadのまま。(psrを差している)
+
+	// save psr
+	mrs	r0,	spsr_all
+	str	r0,	[r13]
+これは上記のpsrの位置に割り込まれた時のPSRをストア。
+
+	// set return address
+	sub	r14,	r14,	#4	// IRQ,FIQ,Prefetch Abort.
+	str	r14,	[r13, #0x40]
+リターンアドレスを調整して、reg.pcにセット。
+
+ここからモードをIRQからSYSに変換します。変換するとR13がバンク切換えで
+変更されるのでR1にとっておきます。R0-R12は既に退避した。
+	mov	r1,	r13
+	// change to system-mode
+	mrs	r2,	cpsr_all
+	orr	r2,	#0x1f
+	msr	cpsr_c,	r2
+
+この段階で割り込まれた時点のR13,R14がアクセスできる
+
+	// save original r13,r14
+	str	r13,	[r1, #0x38]
+	str	r14,	[r1, #0x3c]
+	// now interrupted thread's stack.
+これで、スレッドスイッチスタイルでコンテキストを復帰できる準備ができた。
+SYSになったことで、これからのスタックは割り込まれた時点でのスタックに
+なります。(ここまではスタックを使っていない。)
+
+	bl	interrupt
+これは実際の割り込みハンドラ。VICのステータスレジスタ見てディスパッチします。
+
+ここから先はdo_thread_switchと同様。スレッドスイッチする必要があればスイッチ
+します。
+	// Switch thread if requested.
+	bl	thread_context_switch
+	adr	r0,	.Lcurrent_thread
+	ldr	r0,	[r0]
+	ldr	r0,	[r0]
+
+	ldr	r1,	[r0], #4	// r1 = *r0++;
+	msr	cpsr_all,r1		// restore all CPSR
+	ldmia	r0,	{r0-r15}
+
+
+----------------------------------------------------------------------
+SWI
+----------------------------------------------------------------------
+ほとんどIRQと同じ。
+	.global swi_handler
+swi_handler:
+	IRQ_DISABLE (r13)
+
+IRQ,FIQでは該当する割り込みが禁止されるけれど、SWIではそれがない。IRQハ
+ンドラ内ではスレッドの処理をするため、IRQのみ禁止する。元に戻すのは例外
+発生時のPSRのリロードで完了するので明示的にする必要はない。
+
+	adr	r13,	.Lcurrent_thread
+	ldr	r13,	[r13]
+	ldr	r13,	[r13]
+
+	// save r0-r12 (skip PSR area)
+	stmib	r13,	{r0-r12}
+
+	// save psr
+	mrs	r0,	spsr_all
+	str	r0,	[r13]
+
+	// set return address
+ここでR14の調整がいらないのがSWI。__asm volatile ("swi #0123");のように
+呼び出すので
+	str	r14,	[r13, #0x40]
+	mov	r1,	r13
+	// change to system-mode
+	mrs	r2,	cpsr_all
+	orr	r2,	#0x1f
+	msr	cpsr_c,	r2
+
+	// save original r13,r14
+	str	r13,	[r1, #0x38]
+	str	r14,	[r1, #0x3c]
+	// now interrupted thread's stack.
+
+	//------------------------------
+ここはSWI命令用のテスト。SWI命令は下位24bitがユーザが自由に使っていい領
+域なので、例外発生時の命令を読みとり、下位24bitをexception_swiに渡して
+います。
+	ldr	r0,	[r1, #0x40]	// return address.
+	sub	r0,	#4		// swi instruction address
+	ldr	r0,	[r0]		// swi instruction.
+	and	r0,	#0xffffff	// user area.
+	bl	exception_swi
+	//------------------------------
+
+	// Switch thread if requested.
+	bl	thread_context_switch
+	adr	r0,	.Lcurrent_thread
+	ldr	r0,	[r0]
+	ldr	r0,	[r0]
+
+	ldr	r1,	[r0], #4	// r1 = *r0++;
+	msr	cpsr_all,r1		// restore all CPSR
+	ldmia	r0,	{r0-r15}
+	b	md_thread_machdep_noreturn_assert	// for debug.
+
+.Lstack_start:
+	.long	stack_start

@@ -1,0 +1,16 @@
+3664(16MHz)はCFLAGS += -DSYSTEM_CLOCK=16を設定する。see board/tiny_monitor
+3694(20MHz)はCFLAGS += -DSYSTEM_CLOCK=20を設定する。see board/tiny3694_monitor
+
+3694はinclude ${ROOT_DIR}/mk/3664.mkを指定。
+
+違いはh8/3664/以下
+delay.c:#if SYSTEM_CLOCK == 16
+delay.c:#elif SYSTEM_CLOCK == 20
+delay.c:#if SYSTEM_CLOCK == 16
+delay.c:#elif SYSTEM_CLOCK == 20
+sci_boot_console.c:#if SYSTEM_CLOCK == 16
+sci_boot_console.c:#elif SYSTEM_CLOCK == 20
+timer.c:#if SYSTEM_CLOCK == 16
+timer.c:#elif SYSTEM_CLOCK == 20
+timer.c:#if SYSTEM_CLOCK == 16
+timer.c:#elif SYSTEM_CLOCK == 20

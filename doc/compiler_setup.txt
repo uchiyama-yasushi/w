@@ -1,0 +1,241 @@
+pkgsrc/cross/h8300-hms-gcc(3.1)からgcc-4.3.2に変更。
+
+使うのはこれら。
+gmp-4.2.4.tar.bz2
+mpfr-2.3.2.tar.bz2
+binutils-2.18.tar.gz
+newlib-1.17.0.tar.gz
+gcc-4.3.2.tar.bz2
+
+gmpとmpfrは最近のgccに必要なようです。gmp->mpfr->gccと依存する。gccは
+newlibにも依存する。
+
+----------------------------------------
+gmp
+----------------------------------------
+$ cd gmp-4.2.4
+$ mkdir obj
+$ cd obj
+$ ../configure --prefix=/usr/local
+gmake all;gmake install
+----------------------------------------
+
+----------------------------------------
+mpfr
+----------------------------------------
+$ cd mpfr-2.3.2
+$ mkdir obj
+$ cd obj
+$ ../configure --prefix=/usr/local --with-gmp=/usr/local
+gmake all;gmake install
+----------------------------------------
+
+----------------------------------------
+binutils
+----------------------------------------
+これはラインセパレータが欲しいので、binutils-2.18/gas/config/tc-8300.c
+を変更します。
+
+const char line_separator_chars[] = "$";
+
+$ mkdir obj.h8300-elf
+$ cd obj.h8300-elf/
+$ ../configure --prefix=/usr/local --target=h8300-elf
+gmake all;gmake install
+
+----------------------------------------
+gcc
+----------------------------------------
+libgccのコンパイルにnewlibを使うので、newlibを展開しておき、そのヘッダ
+位置をconfigureで指定します。そのヘッダのディレクトリは先にインストール
+ディレクトリにコピーされる
+
+Copying /home/uch/h8/ccs/newlib-1.17.0/newlib/libc/include to /usr/local/h8300-elf/sys-include
+となるので、然るべきパーミッションに。
+
+コンパイル中、
+cannot compute suffix...
+でconfigureがエラーになるときはmpfrのLD_LIBRARY_PATHが抜けてるので指定
+しておきます.
+
+$ tar zxf newlib-1.17.0.tar.gz
+$ tar zxf gcc-4.3.2.tar.bz2
+$ cd gcc-4.3.2
+$ mkdir obj.h8300-elf
+$ cd obj.h8300-elf/
+$ ../configure --prefix=/usr/local --with-gmp=/usr/local --with-mpfr=/usr/local --target=h8300-elf --enable-languages="c,c++" --with-newlib --with-headers=/home/uch/h8/ccs/newlib-1.17.0/newlib/libc/include
+gmake all; gmake install
+
+----------------------------------------
+newlib
+----------------------------------------
+$ cd newlib-1.17.0
+$ mkdir obj.h8300-elf
+$ cd obj.h8300-elf/
+$ ../configure --prefix=/usr/local --target=h8300-elf
+gmake all;gmake install
+
+インストールに特に問題はありませんでした。
+
+実際に使ってみると、
+
+#pragma interruptが効かなくなっている。(rteじゃなくrtsになっている)
+void func (void) __attribute ((interrupt_handler));
+のように宣言で(H8/300H固有のattribute)設定すれば大丈夫。rteにしてくれる。
+
+.rodataStr1.1のようなセクションを出すので、 *(.rodata*)にする。
+
+/tmp/ccgtXJFg.s: Assembler messages:
+/tmp/ccgtXJFg.s:49: Warning: operand #0xffffffffffffffff out of range.
+/tmp/ccgtXJFg.s:231: Warning: operand #0xffffffffffffffff out of range.
+/tmp/ccgtXJFg.s:271: Warning: operand #0xffffffffffffffff out of range.
+コンパイラの吐いたコード、
+	mov.w	#-1,r1
+	cmp.w	#-1,r3
+	mov.w	#-1,r3
+がこのWarningを出す。
+   83f08:	79 23 ff ff 	cmp.w	#0xffff,r3
+になる。問題なし。
+
+ROMにもっていったところ、起動しない。問題は
+Sections:
+Idx Name          Size      VMA       LMA       File off  Algn
+  0 .vectors      00000004  00000000  00000000  00005b5c  2**0
+                  CONTENTS, READONLY
+  1 .intvecs      000000c4  00000030  00000030  00000094  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  2 .text         000055c4  00000100  00000100  00000158  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+  3 .data         00000440  000fdf10  000056c4  0000571c  2**2
+                  CONTENTS, ALLOC, LOAD, DATA
+  4 .bss          00000f1c  000fe350  00005b04  00005b5c  2**2
+                  ALLOC
+
+.vectorsにLOADがたってない。ので、最初にジャンプすべきアドレスが伝わっ
+てないのだ。
+今迄
+	.section .vectors
+	.long	start
+のようにアセンブラルーチンで指定して、
+MEMORY {
+       vectors	: o = 0x00000, l = 0x4
+}
+SECTIONS {
+	 .vectors :
+	 {
+		*(.vectors)
+	 } > vectors
+}
+のようにしていた。これがLOADにならない。どこからも参照されていないセクション
+だからロードにならないのかも。
+ここは
+	 .vectors :
+	 {
+	 	LONG (ABSOLUTE (start))
+	 } > vectors
+としてやることでLOADを立てれました。ROMでの実行もこれでOK
+ということで、ldscriptはこんな感じに変更。SEARCH_DIRはここに書いても
+Makefileでldの引数に-Lで指定してもいい。ldの引数が優先される。
+-mint32は使ってません。使う時はh8300h/int32/のライブラリを指定する。
+
+OUTPUT_FORMAT ("elf32-h8300")
+OUTPUT_ARCH (h8300:h8300h)
+
+SEARCH_DIR("/usr/local/h8300-elf/lib/h8300h"); /* newlib */
+SEARCH_DIR("/usr/local/lib/gcc/h8300-elf/4.3.2/h8300h"); /* libgcc */
+
+MEMORY {
+       start_vector	: o = 0x00000, l = 0x4
+       intvecs	: o = 0x00030, l = 0xc4
+       intram	: o = 0xfdf10, l = 0x2000
+       rom	: o = 0x00100, l = 0x7ff00
+}
+
+SECTIONS {
+	 _stack_start = 0xfff10;
+	 .start_vector :
+	 {
+	 	LONG (ABSOLUTE (start))
+	 } > start_vector
+
+	 .intvecs :
+	 {
+		*(.intvecs)
+	 } > intvecs
+
+	 .text :
+	 {
+	 	 *(.text)
+		 *(.rodata*)
+		 . = ALIGN (4);
+	 } > rom
+
+	 _rom_data_start = .;
+	 .data :
+	 AT (ADDR (.text) + SIZEOF (.text))
+	 {
+	 	 _data_start = .;
+	 	 *(.data)
+		 . = ALIGN (4);
+		 _data_end = .;
+	 } > intram
+	 _rom_data_end = _rom_data_start + SIZEOF (.data);
+
+	 .bss :
+	 {
+	         _bss_start = .;
+	      	 *(.bss)
+	 } > intram
+	_bss_end = .;
+
+	/DISCARD/ : { *(.*debug*) }
+	/DISCARD/ : { *(.comment) }
+}
+
+h8300-hms-gccはCOFF、h8300-elf-gccにしてELFになったので、weakシンボルが
+使える。これが使えると、
+void null_handler (void) __attribute ((interrupt_handler)); // place holder.
+void irq0 (void) __attribute ((weak, alias ("null_handler")));
+void irq1 (void) __attribute ((weak, alias ("null_handler")));
+
+void (* const vector_table[])(void) __attribute__((section (".intvecs"))) =
+{
+  irq0,		/* 12 0x30 IRQ0 */
+  irq1,		/* 13 0x34 IRQ1 */
+
+のように設定しておいて、ユーザ側から定義があれば、それに置きかわるので
+とても便利。
+
+
+
+pkgsrc/cross/h8300-hms-gccをgcc-4からコンパイルする場合は以下のパッチを
+あてる。
+
+--- ./gcc-3.1/gcc/cp/decl.c.orig	2002-05-04 03:55:23.000000000 +0900
++++ ./gcc-3.1/gcc/cp/decl.c	2008-10-15 14:50:12.000000000 +0900
+@@ -454,9 +454,9 @@
+ /* The binding level currently in effect.  */
+ 
+ #define current_binding_level			\
+-  (cfun && cp_function_chain->bindings		\
+-   ? cp_function_chain->bindings		\
+-   : scope_chain->bindings)
++  (*(cfun && cp_function_chain->bindings		\
++   ? &cp_function_chain->bindings		\
++     : &scope_chain->bindings))
+ 
+ /* The binding level of the current class, if any.  */
+ 
+--- ./gcc-3.1/include/obstack.h.orig	2001-03-15 04:44:38.000000000 +0900
++++ ./gcc-3.1/include/obstack.h	2008-10-14 15:42:08.000000000 +0900
+@@ -423,7 +423,8 @@
+ ({ struct obstack *__o = (OBSTACK);					\
+    if (__o->next_free + sizeof (void *) > __o->chunk_limit)		\
+      _obstack_newchunk (__o, sizeof (void *));				\
+-   *((void **)__o->next_free)++ = ((void *)datum);			\
++   *((void **)__o->next_free) = ((void *)datum);                       \
++   __o->next_free += sizeof(void *);                                   \
+    (void) 0; })
+ 
+ # define obstack_int_grow(OBSTACK,datum)				\
+

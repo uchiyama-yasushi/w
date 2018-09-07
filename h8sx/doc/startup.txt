@@ -1,0 +1,67 @@
+$ cd h8sx/board/simple_monitor
+$ gmake romwrite
+$ tip system-name
+
+/etc/remote
+system-name:dv=/dev/dty00:br#57600:pa=none:dc:
+
+peripheral_power: fffdcc (4096) ->1
+intc_priority: fffd62(8) 7->0
+stack_start: 0xffc000
+ROM data: 0x25fc-0x2644
+RAM data: 0xffbc00-0xffbc48 72byte
+bss: 0xffbc48-0xffbd20 216byte
+VBR: 0x0 (0x0)
+MCU mode: 6
+DTC: short-address mode
+Internal RAM: enabled
+External bus: enabled
+Instruction fetch: 32bit
+MAC instruction: non-saturation mode
+Interrput Control mode: 2
+PA7 clock output: On
+Input clock: 12000000Hz, MDCLK=0
+System clock: x4 (48000000Hz)
+Peripheral clock: x2 (24000000Hz)
+External clock: x4 (48000000Hz)
+H8SX/1655 Simple Monitor Build May 11 2010 20:26:40
+mon> 
+mon> l
+~>Local file name? a.mot
+2744 lines transferred in 11 seconds 
+!
+Read 61615 byte. success
+Start address: 0xff3c58
+peripheral_power: fffdcc (4096) ->1
+intc_priority: fffd62(8) 0->0
+stack_start: 0xffc000
+RAM data: 0xff75a8-0xff75ec 68byte
+bss: 0xff75f0-0xff894c 4956byte
+VBR: 0xff2000 (0xff2000)
+MCU mode: 6
+DTC: short-address mode
+Internal RAM: enabled
+External bus: enabled
+Instruction fetch: 32bit
+MAC instruction: non-saturation mode
+Interrput Control mode: 2
+PA7 clock output: On
+Input clock: 12000000Hz, MDCLK=0
+System clock: x4 (48000000Hz)
+Peripheral clock: x2 (24000000Hz)
+External clock: x4 (48000000Hz)
+intc_priority: fffd62(8) 0->7
+intc_priority: fffd62(8) 7->7
+thread_stack_setup: ff7aec-ff76f0 (400)
+thread_stack_setup: ff7eec-ff7af0 (400)
+thread_stack_setup: ff82ec-ff7ef0 (400)
+thread_stack_setup: ff86ec-ff82f0 (400)
+CONTINUATION=0
+thread_create_no_stack: [2]:uart recv pc=0 (no stack)
+thread_start: [2]
+thread_create_no_stack: [3]:uart send pc=0 (no stack)
+thread_start: [3]
+intc_priority: fffd56(4) 7->7
+OHAYO May 10 2010 23:32:03 arg=1badface
+user> 
+user> 

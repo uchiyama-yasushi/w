@@ -1,0 +1,4 @@
+APICはCPU内蔵のLocal APICとチップセットの実装、I/O APICからなる。
+
+Local APICは16-255の240ベクタをサポートする。
+

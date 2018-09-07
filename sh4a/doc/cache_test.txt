@@ -1,0 +1,291 @@
+キャッシュテスト。
+
+テストバッファは、キャッシュラインサイズ(32B)でアライン。
+カラーの同じバッファを作りたいために0x2000を足している。
+32KBの4wayなので8KBごとに同じカラーになる。
+
+uint8_t test_buf[0x2000 + 64] __attribute__((aligned (32)));
+
+テストバッファをP2(uncached)から表示します。
+void
+dump_from_p2 ()
+{
+  uint32_t *p2 = (uint32_t *)((vaddr_t)test_buf | 0xa0000000);
+  uint32_t *p;
+  int i, j;
+  iprintf ("Dump from P2\n");
+  for (j = 0, p = p2; j < 1; j++)
+    {
+      for (i = 0; i < 8; i++)
+	iprintf ("%x ", *p++);
+      iprintf ("\n");
+    }
+}
+
+テストプログラムはP1で動かし、P1はwrite-backに設定。
+uint32_t
+cache (int32_t argc, const char *argv[])
+{
+  struct {
+    void (*cache_func)(vaddr_t, vsize_t);
+    uint8_t pattern;
+    const char *name;
+  } cache_test [] = {
+    { sh7785_dcache_wbinv_range, 0xaa, "write-back invalidate" },
+    { sh7785_dcache_wb_range, 0xbb, "write-back" },
+    { sh7785_dcache_inv_range, 0xcc, "invalidate" },
+    { sh7785_dcache_wbinv_range_index, 0xdd, "write-back invalidate index" },
+    { (void(*)(vaddr_t, vsize_t))sh7785_dcache_wbinv_all, 0xee,
+      "write-back invalidate index all" },
+  }, *p;
+  vsize_t test_buf_size = 32;キャッシュラインを1ライン使ってテスト。
+
+  if (argc < 2)
+    return 0;
+  p = cache_test + atoi (argv[1]);
+
+コンテキストスイッチをしてキャッシュが不用意に書き戻されたりしないよ
+うに割り込みを禁止します。
+  cpu_status_t s = intr_suspend ();
+
+ここでテストバッファと同じカラーのバッファをキャッシュに乗せます。
+  memset (test_buf + 0x2000, 0xa5, test_buf_size);
+
+  iprintf ("%s test buffer P1=%x pattern=%x\n", p->name, test_buf, p->pattern);
+  sh7785_dcache_array_dump ((vaddr_t)test_buf, test_buf_size);
+
+ここでテストバッファに書き込みます。P1 write-backなので、キャッシュには
+乗っているけれど、メモリにはまだ書き込まれていません。
+
+  memset (test_buf, p->pattern, test_buf_size);
+キャッシュの状況を確認。
+  sh7785_dcache_array_dump ((vaddr_t)test_buf, test_buf_size);
+メモリの状況を確認。
+  dump_from_p2 ();
+
+ここでキャッシュフラッシュ。
+  p->cache_func ((vaddr_t)test_buf, test_buf_size);
+  //  sh7785_dcache_wbinv_all ();
+
+  状況をまた確認。
+  dump_from_p2 ();
+  sh7785_dcache_array_dump ((vaddr_t)test_buf, test_buf_size);
+
+  intr_resume (s);
+
+  return 0;
+}
+
+キャッシュの状況はメモリ割り付けキャッシュから調べます。
+void
+sh7785_dcache_array_dump (vaddr_t va, vsize_t sz)
+{
+  cpu_run_P2 ();
+  vsize_t eva = ROUND_CACHELINE_32 (va + sz);
+  va = TRUNC_CACHELINE_32 (va);
+
+  size_t j, k;
+
+  while (va < eva)
+    {
+キャシュラインごとにダンプします。    
+      uint32_t entry = va & (CCDD_ENTRY_MASK << CCDD_ENTRY_SHIFT);
+      uint32_t d0 = SH7785_CCDD | entry;
+      uint32_t a0 = SH7785_CCDA | entry;
+      iprintf ("[Entry %x](%x)----------------------------------------------\n",
+	       (va >> CCDD_ENTRY_SHIFT) & CCDD_ENTRY_MASK, entry);
+全てのウェイについて
+      for (k = 0; k < SH7785_CACHE_WAY; k++)
+	{
+	  uint32_t way = k << CCDD_WAY_SHIFT;
+	  uint32_t d1 = d0 | way;
+	  uint32_t bit = *(volatile uint32_t *)(a0 | way);
+	  iprintf ("way %d tag=%x (%c|%c)\n", k,
+		   bit & (CCDA_TAG_MASK << CCDA_TAG_SHIFT),
+		   bit & CCDA_U ? 'D' : '-',
+		   bit & CCDA_V ? 'V' : '-');
+キャッシュに乗っているデータを表示
+	  // Dump cache line.
+	  for (j = 0; j < SH7785_CACHE_LINESZ / sizeof (int32_t); j++)
+	    {
+	      uint32_t line = j << CCDD_LINE_SHIFT;
+	      iprintf ("%x ",  *(volatile uint32_t *)(d1 | line));
+	    }
+	  iprintf ("\n");
+	}
+      va += SH7785_CACHE_LINESZ;
+    }
+
+  CPU_SYNC_RESOURCE ();
+  cpu_run_P1 ();
+}
+
+**********************************************************************
+[write-back invalidateのテスト]
+
+test4> cache 0
+write-back invalidate test buffer P1=89006660 pattern=aa
+[Entry 33](660)----------------------------------------------
+way 0 tag=9008400 (D|V) 同じカラーに乗せておいたバッファがあります。
+a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 
+way 1 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+way 2 tag=9008400 (-|-)
+4adfa541 3dd895d7 a4d1c46d d3d6f4fb 4369e96a 346ed9fc ad678846 da60b8d0 
+way 3 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+
+ここでテストバッファに0xaaを書き込み。
+
+[Entry 33](660)----------------------------------------------
+way 0 tag=9008400 (D|V)
+a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 
+way 1 tag=9006400 (D|V) ここのキャッシュに乗りました。
+aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa 
+way 2 tag=9008400 (-|-)
+4adfa541 3dd895d7 a4d1c46d d3d6f4fb 4369e96a 346ed9fc ad678846 da60b8d0 
+way 3 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+
+メモリを覗きます。まだ書きこまれてません。
+Dump from P2
+0 0 0 0 0 0 0 0 
+
+ここでsh7785_dcache_wbinv_range()
+
+Dump from P2 書きこまれました。
+aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa 
+
+[Entry 33](660)----------------------------------------------
+way 0 tag=9008400 (D|V) OCBP命令なので該当しないバッファはそのままです。
+a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 
+way 1 tag=9006400 (-|-) 該当キャッシュは無効化されています。
+aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa 
+way 2 tag=9008400 (-|-)
+4adfa541 3dd895d7 a4d1c46d d3d6f4fb 4369e96a 346ed9fc ad678846 da60b8d0 
+way 3 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+test4> 
+
+**********************************************************************
+[write-backのテスト]
+test4> cache 1
+write-back test buffer P1=89006660 pattern=bb
+[Entry 33](660)----------------------------------------------
+way 0 tag=9008400 (D|V)
+a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 
+way 1 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+way 2 tag=9008400 (-|-)
+4adfa541 3dd895d7 a4d1c46d d3d6f4fb 4369e96a 346ed9fc ad678846 da60b8d0 
+way 3 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+[Entry 33](660)----------------------------------------------
+way 0 tag=9008400 (D|V)
+a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 
+way 1 tag=9006400 (D|V)
+bbbbbbbb bbbbbbbb bbbbbbbb bbbbbbbb bbbbbbbb bbbbbbbb bbbbbbbb bbbbbbbb 
+way 2 tag=9008400 (-|-)
+4adfa541 3dd895d7 a4d1c46d d3d6f4fb 4369e96a 346ed9fc ad678846 da60b8d0 
+way 3 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+
+Dump from P2
+0 0 0 0 0 0 0 0 
+
+ここでsh7785_dcache_wb_range()
+
+Dump from P2 書きこまれました。
+bbbbbbbb bbbbbbbb bbbbbbbb bbbbbbbb bbbbbbbb bbbbbbbb bbbbbbbb bbbbbbbb 
+[Entry 33](660)----------------------------------------------
+way 0 tag=9008400 (D|V) OCBWB命令なので該当しないバッファはそのままです。
+a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 
+way 1 tag=9006400 (-|V) write-backだけされてキャッシュは有効です。
+bbbbbbbb bbbbbbbb bbbbbbbb bbbbbbbb bbbbbbbb bbbbbbbb bbbbbbbb bbbbbbbb 
+way 2 tag=9008400 (-|-)
+4adfa541 3dd895d7 a4d1c46d d3d6f4fb 4369e96a 346ed9fc ad678846 da60b8d0 
+way 3 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+test4> 
+
+**********************************************************************
+[invalidateのテスト]
+test4> cache 2
+invalidate test buffer P1=89006660 pattern=cc
+[Entry 33](660)----------------------------------------------
+way 0 tag=9008400 (D|V)
+a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 
+way 1 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+way 2 tag=9008400 (-|-)
+4adfa541 3dd895d7 a4d1c46d d3d6f4fb 4369e96a 346ed9fc ad678846 da60b8d0 
+way 3 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+[Entry 33](660)----------------------------------------------
+way 0 tag=9008400 (D|V)
+a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 
+way 1 tag=9006400 (D|V)
+cccccccc cccccccc cccccccc cccccccc cccccccc cccccccc cccccccc cccccccc 
+way 2 tag=9008400 (-|-)
+4adfa541 3dd895d7 a4d1c46d d3d6f4fb 4369e96a 346ed9fc ad678846 da60b8d0 
+way 3 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+
+Dump from P2
+0 0 0 0 0 0 0 0 
+
+ここでsh7785_dcache_inv_range()
+
+Dump from P2 キャッシュを無効化しただけなので書きこまれません。
+0 0 0 0 0 0 0 0 
+[Entry 33](660)----------------------------------------------
+way 0 tag=9008400 (D|V)
+a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 
+way 1 tag=9006400 (-|-) キャッシュは無効化されています。
+cccccccc cccccccc cccccccc cccccccc cccccccc cccccccc cccccccc cccccccc 
+way 2 tag=9008400 (-|-)
+4adfa541 3dd895d7 a4d1c46d d3d6f4fb 4369e96a 346ed9fc ad678846 da60b8d0 
+way 3 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+test4> 
+
+**********************************************************************
+[write-back invalidate (Index ops)のテスト]
+test4> cache 3
+write-back invalidate index test buffer P1=89006660 pattern=dd
+[Entry 33](660)----------------------------------------------
+way 0 tag=9008400 (D|V)
+a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 
+way 1 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+way 2 tag=9008400 (-|-)
+4adfa541 3dd895d7 a4d1c46d d3d6f4fb 4369e96a 346ed9fc ad678846 da60b8d0 
+way 3 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+[Entry 33](660)----------------------------------------------
+way 0 tag=9008400 (D|V)
+a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 
+way 1 tag=9006400 (D|V)
+dddddddd dddddddd dddddddd dddddddd dddddddd dddddddd dddddddd dddddddd 
+way 2 tag=9008400 (-|-)
+4adfa541 3dd895d7 a4d1c46d d3d6f4fb 4369e96a 346ed9fc ad678846 da60b8d0 
+way 3 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+
+Dump from P2
+0 0 0 0 0 0 0 0 
+
+ここでsh7785_dcache_wbinv_range_index()
+
+Dump from P2 書きこまれました。
+dddddddd dddddddd dddddddd dddddddd dddddddd dddddddd dddddddd dddddddd 
+[Entry 33](660)----------------------------------------------
+way 0 tag=9008400 (-|-) インデックス操作なのでここも書き戻されて無効化されます。
+a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 a5a5a5a5 
+way 1 tag=9006400 (-|-) 書き戻されて無効化されました。
+dddddddd dddddddd dddddddd dddddddd dddddddd dddddddd dddddddd dddddddd 
+way 2 tag=9008400 (-|-)
+4adfa541 3dd895d7 a4d1c46d d3d6f4fb 4369e96a 346ed9fc ad678846 da60b8d0 
+way 3 tag=9008400 (-|-)
+0 0 0 0 0 0 0 0 
+test4>          

@@ -1,0 +1,32 @@
+OUTPUT_FORMAT("elf32-shl")
+OUTPUT_ARCH(sh)
+
+MEMORY
+{
+	ram : o = 0xa9000000, l = 0x10000
+}
+
+SECTIONS
+{
+	 _stack_start = 0xa9010000;
+
+	.text :
+	{
+		*(.text)
+		 *(.rodata*)
+		 . = ALIGN (4);
+	} > ram
+
+	.data :
+	{
+		*(.data)
+		 . = ALIGN (4);
+	} > ram
+
+	.bss :
+	{
+		 _bss_start = . ;
+		*(.bss)
+	} > ram
+	_bss_end = .;
+}

@@ -1,0 +1,15 @@
+------------------------------
+kernel use resouses.
+
+TMR6 ... sleep timer.
+TMR7 ... delayed dispatch timer.
+SCI4 ... serial console.
+
+------------------------------
+interrupt handler
+
+if defined EXT_FRAME_INFO, C routine is
+void foo (struct exception_frame *ef, uint8_t opri, uint8_t pri);
+else
+void foo (void);
+

@@ -1,0 +1,6 @@
+h8300-elf-nm -S --size-sort  ud01_monitor.elf
+...
+000fe22c 000003c0 d _impure_data
+...
+
+見覚えのないシンボルに960byteもとられている。これはどうも newlib-1.17.0/newlib/libc/reent/impure.cだ。ライブラリをリエントラント可能にするためのなにか(reent.h)らしい。 

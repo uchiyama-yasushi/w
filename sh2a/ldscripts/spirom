@@ -1,0 +1,53 @@
+/* SPI connected Flush rom */
+OUTPUT_FORMAT ("elf32-sh")
+OUTPUT_ARCH (sh)
+
+MEMORY {
+	vectors		: o = 0x1c080000, l = 0x24
+/*
+        Fast RAM                              SPI ROM
+
+	0xfff80000----------------------------0x0000
+	  SPIROM Page0 Boot program region.
+	0xfff81fff----------------------------0x1fff
+	0xfff82000----------------------------0x8000
+	  This program region. (32KB)
+	0xfff89fff----------------------------0xffff
+*/
+	ram		: o = 0xfff82000, l = 0x8000
+	loader_area	: o = 0x1c080000, l = 0x8000
+}
+
+SECTIONS {
+
+	 .vectors :
+	 {
+	 	 *(.vector)
+	 } > ram AT > loader_area
+
+	 .text :
+	 {
+	 	 _text_start = .;
+		*(.text*)
+		*(.rodata*)
+		 . = ALIGN (4);
+	 } > ram AT > loader_area
+
+	 .data :
+	 {
+	 	 _data_start = .;
+	 	 *(.data*)
+		 _data_end = .;
+		 . = ALIGN (4);
+	 } > ram AT > loader_area
+
+	 .bss :
+	 {
+	         _bss_start = .;
+	      	 *(.bss*)
+	 } > ram
+	_bss_end = .;
+
+	/DISCARD/ : { *(.*debug*) }
+	/DISCARD/ : { *(.comment) }
+}

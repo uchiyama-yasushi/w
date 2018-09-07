@@ -1,0 +1,9 @@
+The "earlyclobber" modifier can be added to output operands
+(e.g. "=&r") to make sure GCC uses different registers for input and
+output operands. GCC assumes that the output operands are not used
+before the code is done with all input operands and reuses the input
+registers for output operands. If there are a lot of statements an
+output operand may be used before the code is finished with the input
+operands.
+
+

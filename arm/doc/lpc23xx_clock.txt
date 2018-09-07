@@ -1,0 +1,241 @@
+クロックについて。
+
+LPC2388のクロックソースには、外部発振子(メイン 〜25MHz)、内部RC発振子
+4MHz、外部RTCの3つが選べる。
+
+リセット後には内部発振子の4MHzで駆動する。
+
+リセット後に実行されるブートローダ(ISP)はこれをベースにPLLでクロックを
+設定する。
+
+ISPでボーレートの合わせ込みをした後にクロックを設定するのはこれのため。
+UARTのクロックはCPUクロックをベースにして設定され、最低でも10MHzはない
+と38400bpsで通信できない。実際のとこ12MHzに設定して115200bpsでいける。
+
+PLLの入力は32kHzから25MHzまで。32kHzというのはRTCをソースにできるという
+こと。
+
+PLLを使わない場合は入力ソースがそのままシステムクロックになる。
+
+入力->PLL->Divider->C(CPU)CLK->Divider->P(Peripheral)CLK
+
+ユーザプログラムが直接起動した場合、内部RC発振子でPLLが接続されていない
+状態になるので4MHzで動くことになる。
+
+まずCPUクロックの設定。最大の72MHzにします。クロックを外部発振子12MHzに
+変更して、PLLを設定し(288MHzにする)、Dividerを設定し(1/4にする)72MHzに
+します。LPC23XXのユーザマニュアル6.14章 PLL setup sequenceをそのまま実
+装します。
+
+static inline void
+__pll_feed ()
+{
+
+  *PLLFEED = 0xaa;
+  *PLLFEED = 0x55;
+}
+
+#define	PLL_MVAL	11
+#define	PLL_NVAL	0
+#define	CCLKDIV		3
+
+void
+mcu_speed ()
+{
+  // User manual 6.14 PLL setup sequence.
+
+  // 1. Disconnect the PLL with one feed sequence if PLL is already connected.
+
+ソースクロックとCPUクロックはPLLを介して接続されるか、そのまま接続され
+るかの二択。PLLを介している時にPLLの設定を変えることはできないので、ま
+ずPLLの接続を外してソースクロック直結にします。
+
+ユーザプログラムがリセット後直接起動された場合はISP(ブートローダ)によっ
+てPLLは接続されていないけれども、ISPから直接ユーザプログラムにジャンプ
+することもできる。その場合PLLが接続された状態で実行される。なので確認
+する必要がある。
+
+  if (*PLLSTAT & PLLSTAT_PLLC)	// PLL connected?
+    {
+      // Disconnect PLL. (Enable)
+      *PLLCON = PLLCON_PLLE;
+      __pll_feed ();
+PLLCON, PLLCFGのレジスタの設定はフィードすることで初めて実行される。
+    }
+
+  // 2. Disbale the PLL with one feed sequence.
+PLLを無効化します。PLLCFGはPLLが無効の時しか設定できないためです。
+  *PLLCON = 0;
+  __pll_feed ();
+
+  // 3. Change the CPU Clock Divider setting to speed up operation
+  // without the PLL, If desired
+よくわからず。
+
+  // 4. Write to the Clock Source Selection Control register to change
+  // clock source.
+  // Set main oscillator as PLL clock source.
+ソースクロックをメイン(このボードの場合12MHz)に変更します。変更する
+前に発振子が安定するのを確認して。
+  // Enable main oscillator.
+  *SCS |= SCS_OSCEN;
+  // Wait until oscillator ready.
+  while (!(*SCS & SCS_OSCSTAT))
+    ;
+  *CLKSRCSEL = CLKSRCSEL_OSC;
+
+  // 5. Write to the PLLCFG and make it effective with one feed
+  // sequence. The PLLCFG can only be updated when the PLL is disabled.
+このPLLCFGの設定します。逓倍された周波数は275MHzから550MHzの範囲で
+ないといけない。
+
+  *PLLCFG = PLL_MVAL | (PLL_NVAL << PLLCFG_NSEL_SHIFT);
+  // 2 * (MVAL+1) * Fin(12MHz) / (NVAL + 1)
+  // 2 * 12 * 12000000 / 1 = 288MHz
+
+MVALとNVALの値は上記のコメントのように設定する。いくつかのパターンは
+存在するけれど、NVALを小さくするのがよいとデータシートにはあるのでこの
+設定。周辺機器のクロックはCPUクロックからの分周で与えられ、その分周は
+1/1,1/4,1/8に限られる(RTC,CAN1,CAN2に例外あり)。USBは48MHzでないといけ
+ない。そのあたりを考慮して設定する。UARTは計算によってそこそこ自由に設
+定できる。
+
+  __pll_feed ();
+
+  // 6. Enable the PLL with one feed sequence.
+PLLの設定ができたのでPLLを動かします。まだソースとCPUの間には接続されて
+いません。
+  // Enable PLL, Disconnected.
+  *PLLCON = PLLCON_PLLE;
+  __pll_feed ();
+
+  // 7. Change the CPU Clock Divider setting for the operation with
+  // the PLL. It's critical to do this before connecting PLL.
+  // CPU clock divider.
+ソースクロックがPLLによって逓倍(この場合24倍で288MHz)されたのから、
+何分周したのをCPUクロックとするかを設定します。72MHzにしたいので4。
+  // 1/4 divider 288/4 = 72
+  *CCLKCFG = 3;
+  // 1/8 divider 288/8 = 36
+  //  CCLKCFG = 7;
+
+  // 8. Wait for PLL to achive lock.
+PLLが安定するのを待ちます。
+  while ((*PLLSTAT & PLLSTAT_PLOCK) == 0)
+    ;
+  // Now PLL is requested frequency.
+
+  // 9. Connect PLL with one feed sequence.
+PLLが安定したところで、ソースとCPUの間にPLLを接続します。
+
+  *PLLCON = PLLCON_PLLE | PLLCON_PLLC;		/* enable and connect */
+  __pll_feed ();
+  while ((*PLLSTAT & PLLSTAT_PLLC) == 0)
+    ;
+  // Now PLL is connected.
+}
+
+これでCPUを72MHzで設定できました。そしてUARTの設定。UARTのクロックはCPUの
+クロックの分周から設定されるので、ここからの影響を受けます。
+
+
+void
+com0_init ()	// UART0
+{
+  // Pin select
+ピンはGPIOを多重化されているのでUARTに使うように設定します。
+  mcu_pin_select (0, 2, 1); // Port0.2 : TXD0
+  mcu_pin_select (0, 3, 1); // Port0.3 : RXD0
+
+  /* Clock supply */
+  // CCLK 72MHz PCLK 18Hz
+CPUクロックは72MHzなので1/4の18MHzをPCLKにします。
+  mcu_peripheral_clock (PCLK_UART0, CCLK4);	// 72/4=18
+  // CCLK 36MHz PCLK 18Hz
+  //mcu_peripheral_clock (PCLK_UART0, CCLK2);	// 36/2=18
+
+  /* Power supply */
+電源を入れます。
+  mcu_peripheral_power (PCONP_PCUART0, TRUE);
+
+  /* Line speed. */
+パラメタの設定について。
+  /*
+    PCLK 18MHz 115200bps
+に設定したいとする。
+
+    DLest = 18000000/(16*115200) = 9.77
+を計算する。これが整数でないので
+
+iDLest = PCLK / (16 * 115200 * 1.5);
+を計算する。(1.5がFRest)
+FRest = PCLK / (16 * BR * iDLest);
+を計算する。
+
+    FRest 1.5 がguessで FRest = 1.627になった。
+
+この計算が1.1から1.9に収まらなければFRestのguessを変化させて収まるようにする。
+
+ここでユーザマニュアルの16章テーブル363を参照する。
+    From Table 16.363
+    1.625 DivAddVal/MulVal = 5/8
+このテーブルにある一番近い値は1.625なので、これを参照して
+MULVAL=8,DIVADDVAL=5にする。
+
+DLMとDLLはどうやって決定するか。
+    18000000/(16*(256 * DLM + DLM)* (1+ 5/8))
+この値がbpsになるので、いいところを探す。
+
+    18000000/(16*(256 * 0 + 6)* (1+ 5/8))=115384
+このあたりだろう。なので
+    DLM = 0, DLL = 6
+
+これなら誤差2%程度。
+    115384/115200=1.002
+
+というように決める。
+
+    PCLK 18MHz 57600bps
+    DLest = 18000000/(16*57600) = 19.53
+    FRest = 1.5 -> FRest = 1.5024
+    1.500 DivAddVal/MulVal = 1/2
+    18000000/(16*(256 * 0 + 13)* (1+ 1/2)) = 57692
+    DLM = 0, DLL = 13
+    57692/57600=1.002
+
+    PCLK 18MHz 9600bps
+    DLest = 18000000/(16*9600) = 117.2
+    FRest = 1.500000 =>1.502404
+    1.500 DivAddVal/MulVal = 1/2
+    18000000/(16*(256 * 0 + 78)* (1+ 1/2))=9615
+    DLM = 0, DLL = 78
+    9615/9600=1.002
+   */
+
+
+  // Line Control Register
+  *U0LCR = ULCR_DLAB;	// Enable Divisor Latche access.
+#define	B_115200
+#ifdef B_115200
+  // 115200bps
+  // DLM=0, DLL=4, DIVADDVAL=5, MULVAL=8
+  *U0DLM = 0;	// Divisor Latch MSB
+  *U0DLL = 6;	// Divisor Latch LSB
+  *U0FDR = 5 | (8 << 4);	// Fractional Divider Register
+#elif defined B_57600
+  // 57600bps
+  *U0DLM = 0;		// Divisor Latch MSB
+  *U0DLL = 13;	// Divisor Latch LSB
+  *U0FDR = 1 | (2 << 4);	// Fractional Divider Register
+#elif defined B_9600
+  // 9600bps
+  *U0DLM = 0;		// Divisor Latch MSB
+  *U0DLL = 78;	// Divisor Latch LSB
+  *U0FDR = 1 | (2 << 4);	// Fractional Divider Register
+#else
+#error
+#endif
+  // Set line format. 8N1.
+  *U0LCR = ULCR_8BIT | ULCR_PARITY_NONE | ULCR_STOP1 | ULCR_BREAK_DISABLE;
+  *U0IER = 0;	// Interrupt disable.
+}

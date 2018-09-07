@@ -1,0 +1,48 @@
+OUTPUT_FORMAT ("elf32-h8300")
+OUTPUT_ARCH (h8300:h8300hn)
+
+/* For program loaded by monitor.  */
+
+MEMORY {
+	start_vector	: o = 0xf780, l = 0x2	/* unused */
+	intvecs		: o = 0xf78e, l = 0x26  /* -0xf7b4 */
+/*	intvecs_link	: o = 0xf7b4, l = 0x4c	 -0xf800 (jump table)*/
+	intram		: o = 0xf800, l = 0x500 /* -0xfd00 */
+}
+
+SECTIONS {
+	 _stack_start = 0xfd00;
+	 .start_vector :
+	 {
+	 	SHORT (ABSOLUTE (start))
+	 } > start_vector
+
+	 .intvecs :
+	 {
+		*(.intvecs)
+	 } > intvecs
+
+	 .text :
+	 {
+	 	 *(.text*)
+		 *(.rodata*)
+		 . = ALIGN (4);
+	 } > intram
+
+	 .data :
+	 {
+	 	 _data_start = .;
+	 	 *(.data*)
+		 _data_end = .;
+	 } > intram
+
+	 .bss :
+	 {
+	         _bss_start = .;
+	      	 *(.bss*)
+	 } > intram
+	_bss_end = .;
+
+	/DISCARD/ : { *(.*debug*) }
+	/DISCARD/ : { *(.comment) }
+}

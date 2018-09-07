@@ -1,0 +1,52 @@
+OUTPUT_FORMAT ("elf32-h8300")
+OUTPUT_ARCH (h8300:h8300hn)
+
+/* For standalone program */
+
+MEMORY {
+	start_vector	: o = 0x0000, l = 0x2
+	intvecs		: o = 0x000e, l = 0x26
+	intram		: o = 0xf780, l = 0x800	/* 2KB */
+	rom		: o = 0x0034, l = 0x7fcc/* 32KB */
+}
+
+SECTIONS {
+	 _stack_start = 0xff80;
+	 .start_vector :
+	 {
+	 	SHORT (ABSOLUTE (start))
+	 } > start_vector
+
+	 .intvecs :
+	 {
+		*(.intvecs)
+	 } > intvecs
+
+	 .text :
+	 {
+		*(.text*)
+		*(.rodata*)
+		 . = ALIGN (4);
+	 } > rom
+
+	 _rom_data_start = .;
+	 .data :
+	 AT (ADDR (.text) + SIZEOF (.text))
+	 {
+	 	 _data_start = .;
+		*(.data*)
+		 . = ALIGN (4);
+		 _data_end = .;
+	 } > intram
+	 _rom_data_end = _rom_data_start + SIZEOF (.data);
+
+	 .bss :
+	 {
+	         _bss_start = .;
+	      	 *(.bss*)
+	 } > intram
+	_bss_end = .;
+
+	/DISCARD/ : { *(.*debug*) }
+	/DISCARD/ : { *(.comment) }
+}

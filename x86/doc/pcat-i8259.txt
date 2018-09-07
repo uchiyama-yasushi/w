@@ -1,0 +1,164 @@
+i8259
+
+内部にレジスタが
+  ISR In Service Register
+  IMR Interrupt Mask Register
+  IRR Interrupt Request Register.
+3つある。IMRはOCW1により直接R/W可能。
+
+ISR,IRRはOCW3コマンドを書き込んでどちらかを読むかを指定し、A0を0で読み
+込む。その状態は内部に保存されているので、以降のリードは前回指定したも
+のが読まれる。
+
+レジスタのアドレスは二つ。A0がActiveか否かをi8259がとっているだけで
+それぞれに特有の意味はない。
+
+  A0 D4 D3
+   0  1  0: ICW1 Initialize start.
+   1  0  0 : OCW1
+   0  0  0 : OCW2
+   0  0  1 : OCW3
+
+A0がActiveの時はD0-D7全てが使えるが、A0がActiveでない時はD3,D4でコマンド
+を決定するため、設定に使えるのはD0-D2,D5-D7になる。
+
+  ICW(initialization command words)1-4
+  OCW(operation command words)1-3
+
+の7つがある。ICWはICW1に設定した後に順々にA0をアクティブにして書き込みを
+続けることでICW2,ICW3,ICW4と設定していく。
+
+カスケードは一段まで。カスケードしたi8259との通信ラインはCAS0 CAS1 CAS2
+この3本によってそれぞれスレーブは自分宛てかどうかを判断する。
+
+マスターの場合とスレーブの場合で、i8259内部のプログラムが異なる。これは
+SP#/EN#ピンをGNDに落とすか、Vccにプルアップするかで選択される。(SP Slave
+Program)
+このピンはEN#と共用になっている。EN#はバスにバッファICをつける必要があ
+る時に、そのバッファICにEnableを送るもの。その時はICW4のbit2で、その
+i8259がマスターなのか、スレーブなのかをを指定する。これはpcatでは使われ
+ていない機能。
+
+i8259の割り込み入力ピンIR0-IR7は番号が小さいほど優先度が高い。これは
+多少、設定で変更することができる。(Automatic Rotation, Specific Rotation)
+
+動作モード
+Fully Nested Mode
+割り込みが入るとその優先度以下の割りこみはブロックされる。特に設定しな
+ければこれがデフォルト。
+
+Special Fully Nested Mode
+Fully Nested modeでスレーブからの割り込みが起こると、マスターはスレーブ
+が接続された優先度以下をブロックする。そうするとスレーブ全体でブロック
+されたことになるのでスレーブの中で、現在サービス中の割り込みより高い優
+先度の割り込みがおきてもブロックされてしまう。このモードではそれを解決
+し、マスターはスレーブの優先度未満の割り込みをブロックすることにする。
+これを使った場合はEOIに注意。specific-EOIで注意深く発行する。
+
+Automatic End of Interrupt Mode.
+自動的にnon-specific EOIを2回目のINTAパルスのタイミングで発行する。
+優先度付き多重割り込みを実装するならば、使わない方がいい。
+
+Special Mask Mode
+割り込みをAckしてからEOIが発行されるまでの間に、本来ブロックされる
+低い優先度の割りこみを多重割りこみさせたい時に、設定する。
+
+Automatic Rotation
+優先度はIR0-IR7で固定だが、一度サービスした優先度を最低に内部的に設定
+することで均等に割り込みを受けつける。
+
+OCW2
+R SL EOI
+0  0  1	non-specific EOI
+0  1  1	specific EOI -> L0-L2でレベルを指定
+1  0  1	rotate on non-specific EOI
+1  0  0	rotete in 'automatic EOI mode' (set)
+
+0  0  0 rotate in 'automatic EOI mode' (clear)
+1  1  1 rotate on specific EOI -> L0-L2でレベルを指定
+1  1  0 set priority -> L0-L2で指定されたレベルが最低優先度になる。
+0  1  0 nop
+
+non-specific EOI: fully nested modeの場合、割り込みサービスを受けている
+のは一番高い優先度のものなので、それにEOIを発行。
+
+specific EOI: fully nested modeではない場合、必ずしもサービスを完了した
+のが一番高い優先度のものではないのでL1-L2でレベルを指定してEOIを発行。
+
+Pollコマンド
+OCW2のPビット(2bit)をセットし、その後リードすると、D0-D2にIRRのうち
+一番高い優先度が3bitにエンコードされてD0-D2にあらわれる。D7が立って
+いると割り込みがある。
+
+----------------------------------------
+実際の初期化
+----------------------------------------
+  // Master
+  // Start ICW
+  outb (0x20, ICW1_START | ICW1_IC4);
+
+   + IC4を立てておくとこのICW4の設定まで進む。(しなければICW2、
+あるいはICW3までになる)
+
+   + !SNGL カスケードしているので立てない。カスケードしていない場合は
+ICW3の設定がスキップされる。
+   + !ADI これはMCS-80/85 (8080,8085のこと)用の設定で8086/8088用には
+意味がない。
+
+   + !LTIM エッジトリガ。これはISAだからと言いたいところだけど、正確に
+は歴史的現実的事情か。ISAの割り込み共有については原理的には不可能じゃな
+いようだ。
+
+<a href="http://www.amazon.co.jp/Isa-System-Architecture-PC/dp/0201409968%3FSubscriptionId%3D01XB2AJX6DH0D8W91S02%26tag%3Duchamazon-22%26linkCode%3Dxm2%26camp%3D2025%26creative%3D165953%26creativeASIN%3D0201409968"><img src="http://ecx.images-amazon.com/images/I/51oNnZJSeHL._SL75_.jpg"></a>
+に記述がある。
+
+  // ICW2
+  outb (0x21, 0x20);	// vector address 0x20
+
+   + 8086/8088モードの場合はD3-D7にベクタを設定する。D0-D2の3bitが割り
+込み番号になる。IDTは0x20からユーザが自由に使えるエリアなのでここに
+設定。
+
+  // ICW3
+  outb (0x21, (1 << 2)); // IRQ2 is cascaded.
+
+   + カスケードしているピンを指定。
+
+  // ICW4
+  outb (0x21, ICW4_AEOI | ICW4_uPM);
+
+  + uPM 8086/8088モード。
+
+  + AEOI CPUからのEOIを待たずに自動的にEOIを発行。(これはこのOSが多重割
+  り込みなしのシンプルな設計なので)
+  + !MS
+  + !BUF PC/ATはSP#/EN#ピンをGND/Vccに接続した使いかたなので必ず0
+  + !SFNM Special Fully Nested Mode これは使わない。AEOIを使っているので。
+
+同様にスレーブ。
+  // Slave
+  // Start ICW
+  outb (0xa0, ICW1_START | ICW1_IC4);
+  // ICW2 (!ICW1_SNGL)
+  outb (0xa1, 0x28);	// vector address 0x28
+  // ICW3 (slave ID)
+  outb (0xa1, 0x02);	// my ID is 2
+
+  + スレーブの場合はICW3の設定がマスターと異なる。受信すべきIDを設定。
+
+  // ICW4
+  outb (0xa1, ICW4_AEOI | ICW4_uPM);// 8086 mode. Auto EOI mode.
+
+  // Intialization completed.
+
+この後、OCWでは
+  // OCW1 mask interrupt.
+  outb (0x21, 0xff);
+  outb (0xa1, 0xff);
+  + OCW1:割り込みマスクの設定。まずは全部マスク
+
+OCW2はEOIの発行、優先度ローテーションの設定/解除、特定の優先度の変更
+ができるが、特に設定はなし。
+
+OCW3ではSpecial Mask Modeと、A0=0でリードした時にISRを読むかIRRを読むか
+の設定ができるが、特に設定はなし。

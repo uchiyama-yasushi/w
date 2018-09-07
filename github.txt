@@ -11,3 +11,9 @@ remote: Compressing objects: 100% (2/2), done.
 remote: Total 3 (delta 0), reused 0 (delta 0), pack-reused 0        
 Receiving objects: 100% (3/3), done.
 $ 
+
+[INITIAL COMMIT]
+$ git add .
+$ git commit -m 'initial commit'
+$ git remote add origin git@github.com:uchiyama-yasushi/w.git
+$ git push origin master

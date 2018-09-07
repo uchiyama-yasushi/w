@@ -1,0 +1,65 @@
+------------------------------
+8008
+------------------------------
+I/O
+ |
+ A F(SZHPC)Sign,Zero,Half Carry,Parity,Carry
+ B C
+ D E
+ H L ---> メモリ
+ PC
+
+Half-Carry flag: This flag holds the carry from bit 3 to bit 4. It is
+used by the DAA instruction to convert the contents of the A register
+to BCD form.
+
+Aレジスタ アキュムレータ
+B,C,D,E,H,L 汎用
+
+AレジスタしかI/Oとアクセスできない。
+H, Lしかメモリにアクセスできない
+
+8段ハードウェアスタック
+
+------------------------------
+8080A
+------------------------------
+
+A F
+B C
+D E
+H L
+PC
+
+SP	スタックが導入された。
+------------------------------
+8086
+------------------------------
+()内は対応する8080A
+(A)  AX	アキュムレータ
+(HL) BX	ベース
+(BC) CX カウンタ (loop, shift, rotate)
+(DE) DX データ (div, mult)
+(F)  Flag ODIT(SZHPC) Overflow,Direction(ストリーム命令群),Interrupt,Trap
+
+(PC) PC
+
+(SP) SP Stack Pointer
+--以下新設
+     BP Base Pointer (フレームポインタ)
+     SI Source Index
+     DI Destination Index
+
+     CS	Code Segment
+     DS	Data Segment
+     SS	Stack Segment
+     ES	Extra Segment
+
+レジスタをアドレスとして使えるのはBX,SI,DI,BPだけ。
+指定しない場合DS。BP,SPはSS。
+
+[CS,DS,SS,ES]:[BX,BP]+[SI,DI]+disp(8,16) (80286まで)
+
+32bitからは制限なし。
+[CS,DS,SS,ES]:[EAX,EBX,ECX,EDX,ESP,EBP,ESI,EDI]+[EAX,EBX,ECX,EDX,EBP,ESI,EDI] * [1,2,3,4] + disp(8,32)
+

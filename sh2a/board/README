@@ -1,0 +1,5 @@
+simple_monitor is 38400bps 8N1
+
+command
+ l   load motorola S-format file. ~>
+ g   jump to entry address

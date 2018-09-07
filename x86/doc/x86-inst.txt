@@ -1,0 +1,94 @@
+8086
+------------------------------
+ループ命令
+------------------------------
+LOOP
+if (--cx != 0) フラグに影響を与えない。
+   goto label;
+
+LOOPZ, LOOPNZ
+if ((--cx != 0) && ZF)	// LOOPZ 
+   goto label;
+
+
+------------------------------
+ストリング命令
+------------------------------
+					アドレッシング
+MOVS	メモリ-メモリの移動		DS:SI -> ES:DI
+LODS	メモリからAレジスタへの移動	DS:SI -> A
+STOS	Aレジスタからメモリへの移動	A     -> ES:DI
+SCAS	メモリとAレジスタの比較		A    <-> ES:DI   
+CMPS	メモリとメモリの比較		DS:SI<-> ES:DI
+
+SEG前置命令でSIはDS以外のセグメントにアクセスできるが、DIはES固定。
+一命令で自動的にSI,DIはインクリメントする。
+
+方向はディレクションフラグで設定する。CLD(++),STD(--)
+フラグの状態を退避しておきたい時はPUSHF, POPF命令を使う。
+
+
+REP前置命令で、ストリング命令をループする。
+終了条件
+	MOVS, LODS, STOS : CXレジスタがカウンタでCX==0で終了
+	CMPS, SCAS	 : 上記条件 + 比較結果(Zフラグ) -> repz, repnz
+
+while (cx != 0)
+{
+	operate pending interrupt.
+	(MOVS, LODS, STOS, CMPS, SCAS)
+	cx--
+	if (MOVS, LODS, STOS)
+	   continue;
+	if (!ZF) // REPNZ
+	   break;
+}
+
+------------------------------
+フラグ
+------------------------------
+算術演算フラグに影響する命令
+ADC, ADD, CMP, CMPS, NEG, SBB, SCAS, SUB
+
+キャリーを除く算術演算フラグに影響する命令
+DEC, INC
+
+キャリーとハーフキャリーに意味がある命令
+AAA, AAS
+
+オーバーフローに意味がない命令
+DAA, DAS
+
+キャリーとオーバーフローに影響を与え、他を不定とする命令。
+IMUL, MUL
+
+ハーフキャリーを未定義とする命令
+AND, OR, SAR, SHL, SHR, TEST, XOR
+
+キャリーとオーバーフローだけに影響を与える命令
+RCL, RCR, ROL, ROR
+
+パリティ、サイン、ゼロに影響を与え、他を不定とする命令
+AAD, AAM
+
+全ての算術演算フラグを不定にする命令
+DIV, IDIV (除算エラーの時さらにIF,TFに影響する)
+
+特定のフラグの設定
+CLC, CLD, CLI, CMC, SAHF, STC, STD, STI
+Store AH into Flags: AHレジスタからSF,ZF,AF,PF,CFにロード。
+
+スタックかフラグを復帰する命令
+IRET, POPF
+
+割り込みとトラップのフラグをクリアする命令
+INT, INTO
+
+フラグに関係のない命令
+CALL, CBW, CWD, CWD, ESC, HLT, Jcc, JCXZ, JMP
+LAHF, LDS, LEA, LES, LOCK, LODS, LOOP, MOV,
+MOVS, NOP, NOT, OUT, POP, PUSH, PUSHF, REP,
+RET, SEG, STOS, WAIT, XCHG, XLAT
+
+
+

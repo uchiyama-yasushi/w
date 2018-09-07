@@ -1,0 +1,179 @@
+gccのh8300-hmsのアーキテクチャには3種類ある。
+
+h8300  H8/300
+h8300h H8/300H
+h8300s H8S
+
+H8/3052はH8/300Hシリーズなのでh8300h。
+
+h8300-hms-gcc特有のオプションは
+----------------------------------------------------------------------
+$ h8300-hms-gcc --target-help
+
+Target specific options:
+  -malign-300               Use H8/300 alignment rules
+  -mno-h                    Do not generate H8/300H code
+  -mh                       Generate H8/300H code
+  -mrelax                   Enable linker relaxing
+  -mslowbyte                Consider access to byte sized memory slow
+  -mno-quickcall            Do not use registers for argument passing
+  -mquickcall               Use registers for argument passing
+  -mint32                   Make integers 32 bits wide
+  -mno-s2600                Do not generate H8/S2600 code
+  -ms2600                   Generate H8/S2600 code
+  -mno-s                    Do not generate H8/S code
+  -ms                       Generate H8/S code
+
+----------------------------------------------------------------------
+ABIはhttp://gcc.gnu.org/projects/h8300-abi.htmlを参照。
+
+|         er0          |
+|   e0     |     r0    |
+|          | r0h | r0l |
+
+er0-er3がcaller saved
+er4,er5,er6(fp),er7(sp)がcallee saved
+
+引数は可変長引数でなければ、3つまでer0-er2でレジスタ渡し。その後はスタック。
+8byteまでの返り値はer0,er1で。
+
+-mint32を指定するとintは32bit、指定しなければ16bit。libgcc, newlibを使う
+時にはライブラリ位置の指定に注意。
+
+MSB1st。スタックは降りてくる。
+
+varargを使う時はstdarg.h じゃないとだめ。varargs.hは整合性がとれていない。
+
+
+/*
+void
+func (int a, int b, int c, int d)
+{
+
+}
+
+
+h8300-elf-gcc -mh -c a.c
+   0:	01 00 6d f6 	mov.l	er6,@-er7
+   4:	0f f6       	mov.l	er7,er6
+   6:	1b 97       	subs	#4,er7
+   8:	1b 97       	subs	#4,er7
+   a:	6f e0 ff fe 	mov.w	r0,@(0xfffe:16,er6)
+   e:	6f e1 ff fc 	mov.w	r1,@(0xfffc:16,er6)
+  12:	6f e2 ff fa 	mov.w	r2,@(0xfffa:16,er6)
+  16:	0b 97       	adds	#4,er7
+  18:	0b 97       	adds	#4,er7
+  1a:	01 00 6d 76 	mov.l	@er7+,er6
+  1e:	54 70       	rts	
+
+h8300-elf-gcc -mh -mquickcall -c a.c
+   0:	01 00 6d f6 	mov.l	er6,@-er7
+   4:	0f f6       	mov.l	er7,er6
+   6:	1b 97       	subs	#4,er7
+   8:	1b 97       	subs	#4,er7
+   a:	6f e0 ff fe 	mov.w	r0,@(0xfffe:16,er6)
+   e:	6f e1 ff fc 	mov.w	r1,@(0xfffc:16,er6)
+  12:	6f e2 ff fa 	mov.w	r2,@(0xfffa:16,er6)
+  16:	0b 97       	adds	#4,er7
+  18:	0b 97       	adds	#4,er7
+  1a:	01 00 6d 76 	mov.l	@er7+,er6
+  1e:	54 70       	rts	
+
+h8300-elf-gcc -mh -mrelax -c a.c
+   0:	01 00 6d f6 	mov.l	er6,@-er7
+   4:	0f f6       	mov.l	er7,er6
+   6:	1b 97       	subs	#4,er7
+   8:	1b 97       	subs	#4,er7
+   a:	6f e0 ff fe 	mov.w	r0,@(0xfffe:16,er6)
+   e:	6f e1 ff fc 	mov.w	r1,@(0xfffc:16,er6)
+  12:	6f e2 ff fa 	mov.w	r2,@(0xfffa:16,er6)
+  16:	0b 97       	adds	#4,er7
+  18:	0b 97       	adds	#4,er7
+  1a:	01 00 6d 76 	mov.l	@er7+,er6
+  1e:	54 70       	rts	
+
+h8300-elf-gcc -mh -fomit-frame-pointer -c a.c
+   0:	1b 97       	subs	#4,er7
+   2:	1b 97       	subs	#4,er7
+   4:	6f f0 00 06 	mov.w	r0,@(0x6:16,er7)
+   8:	6f f1 00 04 	mov.w	r1,@(0x4:16,er7)
+   c:	6f f2 00 02 	mov.w	r2,@(0x2:16,er7)
+  10:	0b 97       	adds	#4,er7
+  12:	0b 97       	adds	#4,er7
+  14:	54 70       	rts	
+
+h8300-elf-gcc -mh -mno-quickcall -c a.c
+   0:	01 00 6d f6 	mov.l	er6,@-er7
+   4:	0f f6       	mov.l	er7,er6
+   6:	01 00 6d 76 	mov.l	@er7+,er6
+   a:	54 70       	rts	
+
+
+ */
+
+void
+func (int a, int b, int c, int d)
+{
+  func (a, b, c, d);
+}
+/*
+h8300-elf-gcc -mh -mno-quickcall -c a.c
+   0:	01 00 6d f6 	mov.l	er6,@-er7
+   4:	0f f6       	mov.l	er7,er6
+   6:	6f 62 00 16 	mov.w	@(0x16:16,er6),r2
+   a:	01 00 6d f2 	mov.l	er2,@-er7
+   e:	6f 62 00 12 	mov.w	@(0x12:16,er6),r2
+  12:	01 00 6d f2 	mov.l	er2,@-er7
+  16:	6f 62 00 0e 	mov.w	@(0xe:16,er6),r2
+  1a:	01 00 6d f2 	mov.l	er2,@-er7
+  1e:	6f 62 00 0a 	mov.w	@(0xa:16,er6),r2
+  22:	01 00 6d f2 	mov.l	er2,@-er7
+  26:	5e 00 00 00 	jsr	@0x0:24
+  2a:	7a 17 00 00 	add.l	#0x10,er7
+  2e:	00 10 
+  30:	01 00 6d 76 	mov.l	@er7+,er6
+  34:	54 70       	rts	
+
+   0:	01 00 6d f6 	mov.l	er6,@-er7
+   4:	0f f6       	mov.l	er7,er6
+   6:	01 00 6d f4 	mov.l	er4,@-er7
+   a:	1b 97       	subs	#4,er7
+   c:	1b 97       	subs	#4,er7
+   e:	6f e0 ff fa 	mov.w	r0,@(0xfffa:16,er6)
+  12:	6f e1 ff f8 	mov.w	r1,@(0xfff8:16,er6)
+  16:	6f e2 ff f6 	mov.w	r2,@(0xfff6:16,er6)
+  1a:	6f 63 ff f6 	mov.w	@(0xfff6:16,er6),r3
+  1e:	6f 60 ff f8 	mov.w	@(0xfff8:16,er6),r0
+  22:	6f 64 ff fa 	mov.w	@(0xfffa:16,er6),r4
+  26:	6f 62 00 0a 	mov.w	@(0xa:16,er6),r2
+  2a:	01 00 6d f2 	mov.l	er2,@-er7
+  2e:	0d 32       	mov.w	r3,r2
+  30:	0d 01       	mov.w	r0,r1
+  32:	0d 40       	mov.w	r4,r0
+  34:	5e 00 00 00 	jsr	@0x0:24
+  38:	0b 97       	adds	#4,er7
+  3a:	0b 97       	adds	#4,er7
+  3c:	0b 97       	adds	#4,er7
+  3e:	01 00 6d 74 	mov.l	@er7+,er4
+  42:	01 00 6d 76 	mov.l	@er7+,er6
+  46:	54 70       	rts	
+
+h8300-elf-gcc -mh -O -c a.c
+   0:	01 00 6d f6 	mov.l	er6,@-er7
+   4:	0f f6       	mov.l	er7,er6
+   6:	6f 63 00 0a 	mov.w	@(0xa:16,er6),r3
+   a:	01 00 6d f3 	mov.l	er3,@-er7
+   e:	5e 00 00 00 	jsr	@0x0:24
+  12:	0b 97       	adds	#4,er7
+  14:	01 00 6d 76 	mov.l	@er7+,er6
+  18:	54 70       	rts	
+
+h8300-elf-gcc -mh -O -fomit-frame-pointer -c a.c
+   0:	6f 73 00 06 	mov.w	@(0x6:16,er7),r3
+   4:	01 00 6d f3 	mov.l	er3,@-er7
+   8:	5e 00 00 00 	jsr	@0x0:24
+   c:	0b 97       	adds	#4,er7
+   e:	54 70       	rts	
+
+
+*/

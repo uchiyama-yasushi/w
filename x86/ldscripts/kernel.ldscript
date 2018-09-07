@@ -1,0 +1,47 @@
+/*OUTPUT_FORMAT ("binary")*/
+OUTPUT_FORMAT ("elf32-i386")
+
+MEMORY
+{
+	lma16	: o = 0x80000,	l = 0x10000
+	vma16	: o = 0,	l = 0x10000
+	vma32	: o = 0x100000, l = 0x100000
+}
+
+SECTIONS
+{
+	_stack_start = 0x7fff0;
+
+	.realmode :
+	{
+		mode16_longcall_subr.o
+		bios_console_vga.o
+		bios_console_serial.o
+		bios_int13_rw.o
+		bios_int13_rw_ext.o
+		bios_service.o
+		bios_bounce_buffer.o
+	} > vma16 AT > lma16
+
+	 .text :
+	 {
+	 	 *(.text)
+		 *(.rodata*)
+		 . = ALIGN (4);
+	 } > vma32
+
+	 .data  :
+	 {
+	 	 data_start = .;
+		 *(.data)
+		 . = ALIGN (4);
+		 data_end = .;
+	 } > vma32
+
+	 .bss  :
+	 {
+	         bss_start = .;
+		 *(.bss)
+	 } > vma32
+	bss_end = .;
+}

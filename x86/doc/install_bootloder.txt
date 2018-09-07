@@ -1,0 +1,7 @@
+angel# dd if=/dev/rwd0d of=angel.img bs=512 count=64
+DISKIMAGE=angel.img gmake install_bootsector
+dd if=angel.img of=/dev/rwd0d bs=512 count=64
+
+qemu -fda msdos-6.2.img -hda /dev/rwd1d -boot a
+format c: /s
+

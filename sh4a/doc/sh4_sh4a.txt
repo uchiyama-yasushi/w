@@ -1,0 +1,25 @@
+SH4までは29bitの物理空間だったのが、SH4Aからは32ビットアドレス拡張モー
+ドが導入され、32bitの物理空間を扱えるようになった。
+その場合、P1,P2の扱いが変更になり、PMB(特権マッピングバッファ)にP1,P2の
+マッピングを割と自由に設定できるようになった。16エントリあり、ページは
+16M,64M,128M,512Mが設定可能。
+
+======================================================================
+CACHE
+SH4
+7750, 7750S
+I-cache 8KB line size 32B 1way set-associative(direct-map)
+D-cache 16KB line size 32B 1-way set-associative(direct-map)
+7750R
+I-cache 16KB line size 32B 2way set-associative
+D-cache 32KB line size 32B 2way set-associative
+
+SH4A
+I-cache 32KB line size 32B 4way set-associative
+D-cache 32KB line size 32B 4way set-associative
+======================================================================
+MMU
+7780はPTEAがない。
+7785はTLB拡張モードの導入によって保護とページサイズの設定のためのPTEAが
+できた。
+SH4:7750,7750S,7750RではPTEAはPCMCIA空間のアクセスのための設定だった。

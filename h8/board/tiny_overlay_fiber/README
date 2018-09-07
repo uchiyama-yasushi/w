@@ -1,0 +1,49 @@
+>> SIO@
+stack_start: 0xffffff80
+ROM data: 0x1944-0x196c
+RAM data: 0xfffffd00-0xfffffd28 40byte
+bss: 0xfffffd28-0xfffffda2 122byte
+NMI return address|CCR: f9e
+H8 Simple Monitor Build Mar 18 2011 19:52:57
+>> l
+Send S-record file.
+~>Local file name? a.mot
+158 lines transferred in 1 second 
+!
+Read 3292 byte. success
+Start address: 0xfffffac6
+load 0xfffffb98 (NMI)
+load 0xfffffb98 (TRAPA#0)
+load 0xfffffb98 (TRAPA#1)
+load 0xfffffb98 (TRAPA#2)
+load 0xfffffb98 (TRAPA#3)
+load 0xfffffb98 (Adress Break)
+load 0xfffffb98 (Sleep)
+load 0xfffffb98 (IRQ0)
+load 0xfffffb98 (IRQ1)
+load 0xfffffb98 (IRQ2)
+load 0xfffffb98 (IRQ3)
+load 0xfffffb98 (Wakeup)
+load 0xfffffb98 (Timer A)
+load 0xfffffb98 (reserved20)
+load 0xfffffb98 (Timer W)
+load 0xfffffb98 (Timer V)
+load 0xfffffb98 (SCI3)
+load 0xfffffb98 (I2C)
+load 0xfffffb98 (A/D)
+->fffffac6
+stack_start: 0xfffffd00
+RAM data: 0xfffffc78-0xfffffc7e 6byte
+bss: 0xfffffc7e-0xfffffcc0 66byte
+NMI return address|CCR: 3ef
+board_main
+done.
+>> 
+>> fiber_test
+fiber_create: ffffff32 fffffcb6 fffffa96
+[1->2
+2->1]
+ret1= 390 (390)
+parent: 10 (10)
+parent: 11 (11)
+>> 

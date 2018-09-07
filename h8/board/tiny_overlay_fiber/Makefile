@@ -1,0 +1,41 @@
+ROOT_DIR	= ../../..
+
+all:
+	PROGRAM=RAM ${MAKE} build
+
+#include ../../mk/3694.mk
+include ../../mk/3664.mk
+
+include ${MK_DIR}/objs.mk
+
+#XXX too small stack.
+CFLAGS += -DFIBER_STACK_SIZE_DEFAULT=32 -DSTATIC=
+#
+#CFLAGS += -DDEBUG
+#CFLAGS += -DTHREAD_STACKSIZE_DEFAULT=256
+#CFLAGS += -DDELAY_CALIBRATE_DISABLE
+CFLAGS += -DTHREAD_DISABLE
+#CFLAGS += -DSHELL_DISABLE
+#CFLAGS += -DSMALL_PRINTF
+#CFLAGS += -DBUFFERD_CONSOLE_DISABLE
+#CFLAGS += -DTHREAD_DEBUG -DTHREAD_VERBOSE
+#PROMPT_BUFFER_SIZE
+#PROMPT_HISTORY_MAX
+#SHELL_CMDARG_MAX
+#THREAD_PRIORITY_MAX
+
+# fiber_main hack. XXX
+VPATH += ${ROOT_DIR}/common
+CFLAGS += -DOVERLAY
+
+LIBTYPE	= MINLIB
+OBJS = ${KERN_FIBER_OBJS} fiber_main.o fiber_test_tiny.o
+PROGTYPE = OVERLAY
+ifeq ($(H8MODEL),3694)
+	IMPORT_SYMBOL = ../tiny3694_monitor/tiny3694_monitor.elf
+else
+	IMPORT_SYMBOL = ../tiny3664_monitor/tiny3664_monitor.elf
+endif
+
+include ${MK_DIR}/target.mk
+include ${MK_DIR}/utils.mk

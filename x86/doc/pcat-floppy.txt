@@ -1,0 +1,12 @@
+1.44M
+Head 2
+Tracks/side 80
+sectors/track 18
+
+2 * 80 * 18 * 512 = 1474560byte = 1440KB
+
+boot record 0
+FAT1 1-9
+FAT2 a-12
+directory 13-20
+data 21-b40

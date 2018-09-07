@@ -1,0 +1,30 @@
+OUTPUT_FORMAT ("elf32-sh")
+OUTPUT_ARCH (sh)
+
+MEMORY {
+	start_vector	: o = 0x1c000000, l = 0x10
+	ram		: o = 0x1c000500, l = 0x7ff00	/* 512KB */
+}
+
+SECTIONS {
+
+	 .start_vector :
+	 {
+	 	 *(.vector)
+	 } > start_vector
+
+	 .text :
+	 {
+		*(.text*)
+		*(.rodata*)
+		 . = ALIGN (4);
+	 } > ram
+
+	 .bss :
+	 {
+	         _bss_start = .;
+	      	 *(.bss*)
+	 } > ram
+	_bss_end = .;
+
+}

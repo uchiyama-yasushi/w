@@ -1,0 +1,353 @@
+PC/AT BIOS
+
+ターゲットのストレージの最初の1セクタ(512byte)の510byteからが0xaa55なら
+ブートセクタとして0x7c00にロードする。
+7c00はCS:IP=(0:0x7c00)と(0x7c0:0)の2パターンがあるのでljmpして
+CS:IPを想定した位置に再設定すると確実。
+JMP addr
+ EA  kk jj hh gg
+kk IPの下位8bit
+jj IPの上位8bit
+hh CSの下位8bit
+gg CSの上位8bit
+
+BIOSから制御が渡される際、DLレジスタにブートデバイスの番号が入っている。
+あるいは、MBRパーティションテーブルのブートインジケータを調べる。
+
+INT13HでハードディスクのCHSを指定する場合、
+Cylinder 0から
+Head 0から
+Sector 1から!!
+
+
+
+保護モードに移行した後もリアルモードのBIOSはまだ使いたい。
+
+BIOSを呼ぶルーチンはこの形に固定することにした。引数が3つなのは
+regparm (3)のうち一つはこの関数へのポインタに使われてしまうから。
+
+保護モードとリアルモードでpush/popのアライメントが異なるので、そこの複
+雑さをレジスタ渡しでクリアする目論見も。
+
+typedef int (bios_func_t)(int, int) __attribute__((regparm (2)));
+bios_func_t bios_com_init;
+
+保護モードからはこのようにしてコールする。regparm (3)なので
+3引数はそれぞれ左からEAX, EDX, ECXに積まれる。
+
+int call16 (bios_func_t *, int, int) __attribute__((regparm (3)));
+
+// int call16 (int (*)(int, int), int, int)__attribute__((regparm (3)))
+// call real-mode subroutine from protect-mode.
+	.code32
+FUNC (call16)
+	ENTER_32	これはcallee saved(EBX,ESI,EDI,EBP,ESP)を退避。
+
+まず、リアルモードの設定にしたデスクリプタを設定。保護モード用の設定
+だけれど、そのlimitはリアルモードでも引きつがれる。Dビットは16bitに
+設定。
+BXを使っているのは引数のAXをそのまま下に渡すため。
+	// Install Descriptor for real-mode.
+	movw	$0x20,	%bx
+	movw	%bx,	%ds
+	movw	%bx,	%es
+	movw	%bx,	%ss
+CSはmovで設定できないのでLJMPで設定。
+	ljmp	$0x18,	$1f	// Load CS descriptor for real-mode.
+Dビットは16bitに設定してあるので、ここから16bitモード。
+1:	.code16
+	// Change to real-mode.
+	movl	%cr0,	%ebx
+	andl	$~1,	%ebx
+	movl	%ebx,	%cr0
+パイプラインをフラッシュして、リアルモードのCSに0x0を設定。
+	ljmp	$0,	$2f	// Load real-mode CS with pipeline flush.
+2:
+その他のセグメントもリアルモード用に設定。
+	// Set real-mode DS,ES,SS
+	subw	%bx,	%bx
+	mov	%bx,	%ds
+	mov	%bx,	%es
+スタックポインタは今現在、リアルモードでもそのまま使える設定なので
+これでいい。
+	mov	%bx,	%ss
+	// Now Real-mode.
+
+呼び出す関数の引数を設定します。
+	// Setup argument.
+	mov	%ax,	%bx
+	mov	%dx,	%ax
+	mov	%cx,	%dx
+	// Call requested function.
+	call	*%bx
+
+この後は普通に保護モードに移ります。返り値AXを壊さないように。
+	// Return to Protect-mode.
+	movl	%cr0,	%ebx
+	orl	$0x1,	%ebx
+	movl	%ebx,	%cr0
+	ljmp	$0x8,	$4f	// Load CS(0x08) with pipeline flush.
+4:	.code32
+	// Load DS(0x10),ES,FS,GS
+	movw	$0x10,	%bx
+	movw	%bx,	%ds
+	movw	%bx,	%es
+	movw	%bx,	%fs
+	movw	%bx,	%gs
+	// Load SS
+	movw	%bx,	%ss
+	LEAVE_32
+	ret
+
+これを使って、保護モードから呼ぶラッパーを作成。
+void
+bios_com_putc32 (int8_t c)
+{
+
+  call16 (bios_com_putc, c, 0);
+}
+
+----------------------------------------------------------------------
+----------------------------------------------------------------------
+----------------------------------------------------------------------
+----------------------------------------------------------------------
+----------------------------------------------------------------------
+ブートローダまででは保護モードに移行しても1Mの範囲内に納まっていたので
+BIOSのコールは単にリアルモードに変更するだけで可能だった。1M以上にロー
+ドしたカーネルからでもBIOSを使いたい。
+
+なので1M以下の部分にBIOSを呼ぶルーチンを置いておき、それを呼ぶことにした。
+ROM領域(0xa0000-0xfffff)ではないところで、0x80000からの64KBにした。
+そこに置きたいオブジェクトファイルをldscriptに入れて配置した。
+
+OUTPUT_FORMAT ("elf32-i386")
+
+MEMORY
+{
+	lma16	: o = 0x80000,	l = 0x10000
+	vma16	: o = 0,	l = 0x10000
+	vma32	: o = 0x100000, l = 0x100000
+}
+
+SECTIONS
+{
+	_stack_start = 0x7fff0;
+
+	.realmode :
+	{
+		mode16_longcall_subr.o
+		bios_console_vga.o
+		bios_console_serial.o
+		bios_int13_rw.o
+		bios_int13_rw_ext.o
+		bios_service.o
+	} > vma16 AT > lma16
+
+	 .text :
+	 {
+	 	 *(.text)
+		 *(.rodata*)
+		 . = ALIGN (4);
+	 } > vma32
+
+	 .data  :
+	 {
+	 	 data_start = .;
+		 *(.data)
+		 . = ALIGN (4);
+		 data_end = .;
+	 } > vma32
+
+	 .bss  :
+	 {
+	         bss_start = .;
+		 *(.bss)
+	 } > vma32
+	bss_end = .;
+}
+
+
+こうすると
+
+ELF entry point 0x1004c0
+# of program header: 2
+[0] vaddr=0x0 memsz=0x1ec paddr=0x80000 offset=0x1000 filesz=0x1ec
+[1] vaddr=0x100000 memsz=0x6a10 paddr=0x100000 offset=0x2000 filesz=0x57c4
+
+のように配置される。重複はしなかった。最初のプログラムヘッダーの部分は
+このようになる。
+
+kernel.elf:     file format elf32-i386
+
+Disassembly of section .realmode:
+
+00000000 <__lcall16_subr>:
+   0:	55                   	push   %ebp
+   1:	89 e5                	mov    %esp,%ebp
+   3:	56                   	push   %esi
+   4:	57                   	push   %edi
+   5:	53                   	push   %ebx
+   6:	66 bb 30 00          	mov    $0x30,%bx
+   a:	8e db                	mov    %ebx,%ds
+
+なので、これを呼ぶにはセグメントを切り替える必要がある。
+
+この領域を保護モードから呼ぶためのセグメント(CODE32_BIOS, DATA32_BIOS)
+と、リアルモードのリミットを設定するだけのセグメント(CODE16, DATA16)を用意。
+(この場合、Dビットの違いしかないので、CODE32_BIOSを設定すればそれだけで済む
+ので蛇足)
+
+struct gdt_config gdt_config [] = {
+  // 4G flat.
+  { 0x0, 0x100000, SIZE_UNIT_4KB, CODE_32, CODE_SEGMENT, "CODE32" },//0x08
+  { 0x0, 0x100000, SIZE_UNIT_4KB, CODE_32, DATA_SEGMENT, "DATA32" },//0x10
+  // For Real-mode.
+  { 0x80000, 0x10000, SIZE_UNIT_1B, CODE_32, CODE_SEGMENT, "CODE32_BIOS" },//0x18
+  { 0x80000, 0x10000, SIZE_UNIT_1B, CODE_32, DATA_SEGMENT, "DATA32_BIOS" },//0x20
+  { 0x80000, 0x10000, SIZE_UNIT_1B, CODE_16, CODE_SEGMENT, "CODE16" },//0x28
+  { 0x80000, 0x10000, SIZE_UNIT_1B, CODE_16, DATA_SEGMENT, "DATA16" },//0x30
+};
+
+----------------------------------------------------------------------
+BIOSを呼ぶ一番最初は512Kからのセグメントにジャンプするところから。
+----------------------------------------------------------------------
+// int __lcall16 (int (*)(int, int), int, int)__attribute__((regparm (3)))
+// call real-mode subroutine from protect-mode with segment switch.
+
+FUNC (__lcall16)
+	ENTER_32
+	// suspend interrupt.
+  ここでcliを使わないのは、呼ばれた時の割り込み状況をそのまま保持してリ
+  ターンしたいため。callee savedの%esiにとっておく。
+	pushf
+	movl	(%esp),	%esi
+	andl	$~0x200,(%esp)
+	popf
+
+  BIOSが割り込みを使うので、IDTをリアルモード用に戻しておく。0x0-0x3ff。
+	// Install Descriptor for real-mode.
+	// Real-mode IDT
+	lidt	realmode_lidt_arg
+
+  現在のスタックをcallee savedの%ediにとっておく。
+	movl	%esp,	%edi
+  データ/スタック領域のセグメントを0x80000からの64KBのセグメントに変更。
+	movw	$GDT_DATA32_BIOS, %bx
+	movw	%bx,	%ss
+	movw	%bx,	%ds
+	movw	%bx,	%es
+	movw	%bx,	%fs
+	movw	%bx,	%gs
+	// Change stack.
+	movl	$0xfff0, %esp
+  コードセグメントの変更と同時にサブルーチンコール。
+	lcall	$GDT_CODE32_BIOS, $__lcall16_subr
+  元のコードセグメントに戻すために即座にロングジャンプ。
+ ljmpのフェッチまではベースが0x80000のセグメント。
+	// Return to current segment.
+	ljmp	$GDT_CODE32, $1f
+ ここからはベースが0x0のセグメント。
+1:	movw	$GDT_DATA32,	%bx
+	movw	%bx,	%ss
+	movw	%bx,	%ds
+	movw	%bx,	%es
+	movw	%bx,	%fs
+	movw	%bx,	%gs
+	movl	%edi,	%esp
+  このIDTはプログラムで設定した保護モード用もの。
+	// Restore IDT
+	lidt	protectmode_lidt_arg
+	// Resume interrupt
+	pushf
+	orl	%esi,	(%esp)
+	popf
+	LEAVE_32
+	ret
+	.section .data
+	.balign 4
+realmode_lidt_arg:
+	.short	0x3ff
+	.long	0x0
+
+----------------------------------------------------------------------
+0x80000にあるBIOSを呼び出すところ。
+----------------------------------------------------------------------
+	.code32
+FUNC (__lcall16_subr)
+	ENTER_32
+リアルモード用のリミットの設定。
+	// GDT set segment limit for real-mode.
+	movw	$GDT_DATA16,	%bx
+	movw	%bx,	%ds
+	movw	%bx,	%es
+	movw	%bx,	%ss
+	ljmp	$GDT_CODE16,	$1f	// Load CS descriptor for real-mode.
+1:	.code16
+
+ ここからDビットが落ちているのでアドレス解釈が16bitモードになる。CPUは
+32bit モード(デスクリプタからリニアアドレスを計算する)。 Dビットは
+push,popのサイズの違い、IPかEIPか(ここではもう64KB以内になるようになっ
+ているのでどちらでも同じになる)、レジスタアクセスの幅が変わる。CR0の
+1bit目を変更するだけなので、どちらでも同じになる。これをやるのは、コー
+ドセグメントのリミット値の設定の目的だけ。
+
+	// Change to real-mode.
+	movl	%cr0,	%ebx
+	andl	$~1,	%ebx
+	movl	%ebx,	%cr0
+
+ここではじめてリアルモード。(セグメントレジスタの値 *16 + オフセットでリニアアドレスを計算)
+	ljmp	$REALMODE_CS,	$2f	// Load real-mode CS with pipeline flush.
+2:
+	// Set real-mode DS,ES,SS
+REALMODE_CSは0x8000。スタックはリアルモードと保護モードで共用できる設定
+にしてあるのでセグメントの変更だけでいい。
+	movw	$REALMODE_CS,	%bx
+	mov	%bx,	%ds
+	mov	%bx,	%es
+	mov	%bx,	%ss
+	// Now Real-mode.
+
+	// Setup argument.
+	mov	%ax,	%bx
+	mov	%dx,	%ax
+	mov	%cx,	%dx
+	// Call requested function.
+	call	*%bx
+
+	// Return to Protect-mode.
+	movl	%cr0,	%ebx
+	orl	$0x1,	%ebx
+	movl	%ebx,	%cr0
+まずここで、0x80000がベースのセグメントに戻る。
+	ljmp	$GDT_CODE32_BIOS, $4f	// Load CS with pipeline flush.
+4:	.code32
+	// Load SS
+	movw	$GDT_DATA32_BIOS,%bx
+	movw	%bx,	%ss
+	LEAVE_32
+	lret
+
+これでBIOSコールが使えるようになった。(ここまではVGA直書きでデバッグ)
+
+LBA 136 -> track 3, head 1, sector 11
+bios_fdd_read: drive 0 sector 136 (T3/H1/S11)
+LBA 137 -> track 3, head 1, sector 12
+bios_fdd_read: drive 0 sector 137 (T3/H1/S12)
+ELF entry point 0x1004c0
+# of program header: 2
+[0] vaddr=0x0 memsz=0x1ec paddr=0x80000 offset=0x1000 filesz=0x1ec
+[1] vaddr=0x100000 memsz=0x6a10 paddr=0x100000 offset=0x2000 filesz=0x57c4
+stack_start: 0x7fff0
+data: 0x104ee0-0x1057c4 2276byte
+bss: 0x1057e0-0x106a10 4656byte
+EFLAGS=0x6
+IDT: base=0x0 limit=0x3ff
+IDT: base=0x105d60 limit=0x7ff
+board_main arg=330
+app0_thread: arg=abcdef90
+IRQ0
+IRQ0
+IRQ0
+IRQ0
+IRQ0

@@ -1,0 +1,464 @@
+
+x86続き。例外処理について。例外処理のうち、一部はタスクゲートを使った方
+がよいのがある。例外処理はCS:IP、例外によってはエラーコードをスタックに
+プッシュして呼び出されるので、スタックが不定である可能性がある場合には、
+タスクゲートを登録しておくことで、そのタスクの確実なスタックにプッシュ
+して例外処理をできる。
+
+<ul>
+<li>ダブルフォルト:これが起きる時にはスタックも信用できない可能性がある。
+トリプルフォルトでリセットなので、その前にEIPくらいは表示したい。
+<li>無効TSS: TSSの切り替えで失敗した時の例外。状況によっては切り替えた
+先のTSSのSSを参照するので、それが信用できない場合もある。
+<li>スタックオーバーラン:スタックで例外が起きた時。実際にはSSは4Gフラットでとっているのでこれは起こることはなさそうだけれど。
+</ul>
+ということで、このためにx86のタスク機能を実装。
+<pre>
+
+CPUのファームウェアが退避/復旧するのはこの形。
+
+struct tss
+{
+  uint16_t backlink;	uint16_t pad0;
+  uint32_t esp0;
+  uint16_t ss0;		uint16_t pad1;
+  uint32_t esp1;
+  uint16_t ss1;		uint16_t pad2;
+  uint32_t esp2;
+  uint16_t ss2;		uint16_t pad3;
+  uint32_t cr3;
+  uint32_t eip;
+  uint32_t eflags;
+  uint32_t eax;
+  uint32_t ecx;
+  uint32_t edx;
+  uint32_t ebx;
+  uint32_t esp;
+  uint32_t ebp;
+  uint32_t esi;
+  uint32_t edi;
+  uint16_t es;		uint16_t pad4;
+  uint16_t cs;		uint16_t pad5;
+  uint16_t ss;		uint16_t pad6;
+  uint16_t ds;		uint16_t pad7;
+  uint16_t fs;		uint16_t pad8;
+  uint16_t gs;		uint16_t pad9;
+  uint16_t ldt;		uint16_t pada;
+  uint16_t t;		uint16_t iomap;
+  //#define	IO_MASK_MAX	0x800
+
+#define IO_MASK_MAX 1 最低でもこれはいる。そして最後のバイトを0xffに。
+4byteアライン。それはこのTSSのセグメントの大きさをCPUがチェックするから。
+
+  uint32_t io_mask[IO_MASK_MAX];
+} __attribute ((packed));
+
+この構造体全体をデスクリプタとして登録する。アクセスバイトでこのデスク
+リプタがTSSであることを宣言する。このTSSのLDTの設定はGDTの配列をこれも
+そのままセグメントとしてアクセスバイトでLDTと設定して登録しておき、その
+セレクタをTSSのldtに設定。(これはこのOSの設定)
+
+タスクゲートは、このタスクデスクリプタへのポインタ。GDTへの参照でljmp,
+lcallする分にはデスクリプタをオペランドにしても、ゲートをオペランドにし
+てもどっちでもいい。しかしIDTに登録できるのはゲートだけ。IDTのゲートは
+GDTのTSSセグメントを指すようにする。ゲートに登録するのはセグメントだけ。
+ゲートにゲートを登録すると一般保護例外。
+
+void
+tss_install_gdt (struct tss *tss, uint16_t desc_idx, uint16_t gate_idx)
+{
+  union descriptor *d;
+
+ここでstruct tssをセグメントとしてGDTに登録する。
+  // TSS itself.
+  d = descriptor (desc_idx);
+  descriptor_set_base (&d->desc, (uint32_t)tss);
+  descriptor_set_size (&d->desc, sizeof (struct tss));
+
+そのセグメントへのゲートをGDTに登録
+  // Corresponding gate.
+  d = descriptor (gate_idx);
+  gate_task (&d->gate, desc_idx);
+}
+
+IDTは別にまた登録。
+    { 0x08, SYS_TASKGATE, 0, GDT_TSS_DOUBLE_FAULT, 0 }, // double fault
+    { 0x09, SYS_INTRGATE, 0, GDT_CODE32, abort09_cop_segment_overrun },
+    { 0x0a, SYS_TASKGATE, 0, GDT_TSS_INVALID_TSS, 0 }, //invalid_tss
+    { 0x0b, SYS_INTRGATE, 0, GDT_CODE32, fault0b_no_segment },
+    { 0x0c, SYS_TASKGATE, 0, GDT_TSS_STACK_OVERRUN, 0 },//stack overrun
+    { 0x0d, SYS_INTRGATE, 0, GDT_CODE32, fault0d_general_protection },
+タスクゲートの参照先はGDTのTSSセグメント。ゲートではない。
+
+void
+exception_init ()
+{
+  struct tss_config *config;
+  int i;
+
+最初のタスクスイッチで今のコンテキストを退避する場所を登録する。
+  // Setup my backup area.
+  tss_install_gdt (&tss_kernel, GDT_TSS_KERNEL, GDT_GATE_KERNEL);
+
+ltr命令は退避する場所を設定して、BUSYビットを立てるだけで、タスクスイッ
+チはしない。なのでtssの中身の設定は不用。最初のスイッチでCPUがこの場所
+に退避してくれる。
+  // Load myself. (no task change)
+  tss_install_tr (GDT_TSS_KERNEL);
+
+タスクを登録。これは全てTSSの内容を設定しておく必要がある。
+  for (i = 0, config = tss_config; i &lt; sizeof tss_config / sizeof tss_config[0];
+       i++, config++)
+    {
+      tss_setup (config->tss, config->func, config->stack_top);
+      tss_install_gdt (config->tss, config->segment, config->gate);
+    }
+
+  // Load IDT.
+  idt_init ();
+
+  // Now OK to use gate.
+#define	tss_call(selector)	__asm volatile ("lcall %0, $0":: "i"(selector));
+  tss_call (GDT_GATE_USER);ゲートでも、
+  tss_call (GDT_TSS_USER);セグメントでもよい。(特権保護がなければ)
+
+
+}
+
+void
+tss_install_gdt (struct tss *tss, uint16_t desc_idx, uint16_t gate_idx)
+{
+  union descriptor *d;
+
+これはTSS構造体の領域をセグメントとして登録。
+  // TSS itself.
+  d = descriptor (desc_idx);
+  descriptor_set_base (&d->desc, (uint32_t)tss);
+  descriptor_set_size (&d->desc, sizeof (struct tss));
+
+そのTSS構造体にジャンプするゲートを登録。GDT経由なら、なくてもいい。
+  // Corresponding gate.
+  d = descriptor (gate_idx);
+  gate_task (&d->gate, desc_idx);
+}
+
+void
+tss_install_tr (uint16_t selector)
+{
+
+  __asm volatile ("ltr	%0":: "a"(selector));
+}
+
+void
+tss_setup (struct tss *tss, void (*start_func)(void), uint32_t stack_start)
+{
+  struct lgdt_arg gdt;
+  union descriptor *d;
+
+  // LDT
+GDTをそのままLDTとして登録(ダミー)。登録すべきものが欲しいので。
+  __asm volatile ("sgdt %0" : "=m"(gdt):);
+  d = descriptor (GDT_LDT);
+  descriptor_set_base (&d->desc, gdt.base);
+  descriptor_set_size (&d->desc, gdt.limit + 1);
+
+  memset (tss, 0, sizeof (struct tss));
+
+  tss->esp0 = tss->esp1= tss->esp2 = stack_start;
+  tss->ss0 = tss->ss1 = tss->ss2 = GDT_DATA32;
+
+  tss->eip = (uint32_t)start_func;
+  tss->eflags = eflags_get ();	//XXX ここはおいおい。
+  tss->esp = stack_start;
+  tss->ldt = GDT_LDT;
+  tss->cs = GDT_CODE32;
+  tss->ss = tss->ds = tss->es = tss->fs  = tss->gs = GDT_DATA32;
+  tss->iomap = offsetof (struct tss, io_mask);
+  tss->io_mask[IO_MASK_MAX - 1] |= 0xff000000;	// Marker.
+
+  tss->eax = 0xac1dcafe;テスト用の引数。
+}
+
+
+呼び出される側は
+
+void
+user_task ()
+{
+
+  int i = 0;
+  int arg = 0;
+  __asm volatile ("movl %%eax, %0": "=g"(arg):);
+
+  while (/*CONSTCOND*/1)
+    {
+      printf ("hello tss %x %d\n", arg, i++);
+      __asm volatile ("iret"); ここでリターン。
+      printf ("world\n"); 次の呼び出された時はここから。
+    }
+}
+
+
+x86続き。
+
+TSSについて。TSSデスクリプタのBビットは"Busy"。これは同じタスクに再入し
+ないことを保証するためのもの。TSSの退避領域は一つしかないので再入はでき
+ない。
+
+TSSに関わるEFLAGSのビットにNTがある。NT"Nested Task"ビット、これはIRET
+命令とペア。IRET命令を発行した時にNTビットが立っていれば、バックリンク
+先のTSSにタスクチェンジする。
+
+割り込みハンドラでIRETを発行した時に、割りこまれたタスクではなくそれを
+呼んだタスクまで戻ってしまうことを避けるために、割り込まれた時はCPUが
+NTビットを退避してNT=0にして、割り込みハンドラを実行し、IRET終了後にNT
+ビットを復帰することで、この問題を解決している。
+
+x86のタスクまわりはこうすることにした。
+
+
+   + 4GフラットのCS,DSをテンプレートに、そのタスクのセグメントは自分の
+セグメントをLDTに持つ。(領域の設定はなし)
+   + そのLDTはコード、データ、スタック、特権保護用のスタックの4つ。
+   + スタックはそれぞれ小さくもつ。(そういうタスクなので)
+
+
+タスクの設定
+struct segment_config
+{
+  void *start;
+  size_t size;
+  uint16_t priority;
+  uint16_t segment;
+};
+
+struct tss_config
+{
+  struct tss *tss; x86のTSS領域そのもの。
+  uint16_t tss_segment; このTSS領域のセグメント。
+  uint16_t gate_selector; このTSSへのゲート。
+  int priority; タスクの準位。
+
+  uint16_t code_segment; このタスクのアクセス領域へのテンプレート。このま
+  まは使わない。
+
+  uint16_t data_segment; このタスクのアクセス領域へのテンプレート。この
+  ままは使わない。
+
+  struct segment_config ldt; 上のテンプレートを元に設定したLDT。このタ
+  スクはこのLDTを参照する。(CS,DS,ES,FS,GS)
+
+
+  struct segment_config stack; タスクのスタック。
+
+  struct segment_config stack_privilege; 特権準位を変更した時のスタック。
+一個しか設定していないので、callできる準位は一つに限られる。(そういう
+OSの設定)
+
+  uint32_t eflags; タスク起動時のEFLAGS
+  void (*func) (void); タスク起動時の入口。
+  const char *name; これはTSSのOS依存部分に保存する。
+};
+
+
+#define	TSS_DEFAULT_STACK_SIZE	4096
+#define	TSS_DEFAULT_LDT_NUM	4
+#define	TSS_DEFAULT_LDT_SIZE	(4 * sizeof (union descriptor))
+
+それぞれのタスクの必要とする領域。
+struct task_local_storage
+{
+  struct tss tss;
+  union descriptor ldt[TSS_DEFAULT_LDT_NUM];
+  uint8_t stack[TSS_DEFAULT_STACK_SIZE];
+  uint8_t stack_privilege[TSS_DEFAULT_STACK_SIZE];
+} __attribute__ ((aligned (4096))); // struct tss limitation.
+TSSがページ境界をまたぐとページングした時にフォルトするので、4096byte境界に
+しておく。
+
+struct task_local_storage task[5];
+gdt_config.hと矛盾のないように。
+
+STATIC struct tss bootstrap_tss; これはブートストラップの実行状態の退避
+領域。ブートストラップは特権準位0なので、TSS領域から情報を読みとる(特権準
+位の変更(上のみ)の時にスタックの変更する時にある)ことはない。
+
+
+STATIC void task_user0 (void);
+STATIC void task_user3 (void);
+
+ダブルフォルト、TSS違反、スタックフォルト用の設定。
+#define	EXCEPTION_TASK(n, cause, func)					\
+    {									\
+      &task[n].tss,							\
+      GDT_TSS_ ## cause, GDT_GATE_ ## cause,				\
+	0,	/* priority 0 */					\
+      GDT_CODE32, GDT_DATA32,						\
+      { task[n].ldt, TSS_DEFAULT_LDT_SIZE, 0, GDT_LDT ## n },		\
+      { task[n].stack, TSS_DEFAULT_STACK_SIZE, 0, GDT_DATA32 },		\
+      { 0, 0, 0, 0 },/* No privilege change. */				\
+特権準位0なので、他の準位にコールゲートで移行することはないので設定する
+必要がない。
+      0,								\
+      func, #cause							\
+    }
+
+#define	APPLICATION_TASK(n, app, func, priority)			\
+    {									\
+      &task[n].tss,							\
+      GDT_TSS_ ## app, GDT_GATE_ ## app,				\
+      priority,								\
+      GDT_CODE32, GDT_DATA32,						\
+      { task[n].ldt, TSS_DEFAULT_LDT_SIZE, priority, GDT_LDT ## n },	\
+      { task[n].stack, TSS_DEFAULT_STACK_SIZE, priority, GDT_DATA32 },	\
+      { task[n].stack_privilege, TSS_DEFAULT_STACK_SIZE, 0, GDT_DATA32 },\
+
+stack_privilegeの特権準位を0にしているのはこのOSの仕様。コールゲートの
+準位は0 だけということ。この準位はコールゲートから呼びだされるコードセ
+グメントの準位と等しくしておかないといけない。低かった場合、スタックに
+攻撃される可能性があるので。そういう設定をした場合はTSS例外でフォルトす
+る。
+
+      0,								\
+      func, #app							\
+    }
+
+struct tss_config tss_config [] =
+  {
+    EXCEPTION_TASK (0, DOUBLE_FAULT, task_exception_entry),
+    EXCEPTION_TASK (1, INVALID_TSS, task_exception_entry),
+    EXCEPTION_TASK (2, STACK_OVERRUN, task_exception_entry),
+    APPLICATION_TASK (3, TASK0, task_user0, 0),特権準位0のタスク
+    APPLICATION_TASK (4, TASK3, task_user3, 3),特権準位3のタスク
+  };
+
+void
+task_init ()
+{
+  struct tss_config *config;
+  int i;
+
+  // Setup my backup area.
+  tss_install_gdt (&bootstrap_tss, GDT_TSS_KERNEL, GDT_GATE_KERNEL);
+  strncpy (bootstrap_tss.osdep, "kernel", TSS_OSDEP_MAX);
+
+  // Load myself. (no task change here.)
+  tss_set_tr (GDT_TSS_KERNEL);
+  printf ("%s: tss:0x%x size:0x%x\n", __FUNCTION__, &bootstrap_tss,
+	  sizeof bootstrap_tss);
+
+  // Setup TSS
+  for (i = 0, config = tss_config; i &lt; sizeof tss_config / sizeof tss_config[0];
+       i++, config++)
+    {
+      memset (config->stack.start, 0xa5, config->stack.size);
+      if (config->stack_privilege.start)
+	memset (config->stack_privilege.start, 0xa5,
+		config->stack_privilege.size);
+
+  TSSの内容を作って、
+      tss_setup (config);
+  GDTにそのTSS領域を設定し、それを呼ぶゲートを設定する。
+      tss_install_gdt (config->tss, config->tss_segment, config->gate_selector);
+    }
+
+  tss_dump (GDT_TSS_KERNEL);
+  tss_dump (GDT_TSS_TASK0);
+  tss_dump (GDT_TSS_TASK3);
+  // Now OK to use gate.
+  tss_call (GDT_GATE_TASK0);
+  tss_call (GDT_TSS_TASK0);
+
+  IRETで帰ってくる。IRETによってTASK0のTSSのEIPにはIRET命令の次の命令が
+設定されるので、次にタスクを呼んだ時にはそこからになる。
+}
+
+void
+tss_setup (const struct tss_config *conf)
+{
+  struct tss *tss = conf->tss;
+  int priority = conf->priority;
+  const struct segment_config *seg;
+
+  memset (tss, 0, sizeof (struct tss));
+
+  このタスクのCS,DS,ES,FS,GSは全てここでセットアップされたLDTを参照する。
+  // Construct my LDT.
+  tss->ldt = ldt_setup (conf);
+
+  // Stack for privilege change.
+  seg = &conf->stack_privilege;
+  tss->esp0 = (uint32_t)seg->start + seg->size - 16;
+  tss->ss0 = 24 | SELECTOR_TI | seg->priority; LDTを参照。24はそう決めた。
+  このプライオリティはコールゲート呼びだされる準位でないといけない。
+  この場合、seg->priorityは0でないといけない。
+  tss->ss1 = tss->ss2 = 0;	// unused.
+  tss->esp1= tss->esp2 = 0;	// unused.
+
+  // Normal stack.
+  seg = &conf->stack;
+  tss->eip = (uint32_t)conf->func;
+  tss->eflags = conf->eflags;
+  tss->esp = (uint32_t)seg->start + seg->size - 16;
+
+  // Code/Data segment.
+  tss->cs = 8 | SELECTOR_TI | priority;  LDTを参照。8はそう決めた。
+  tss->ds = tss->es = tss->fs  = tss->gs = tss->ss =
+    16 | SELECTOR_TI | priority; LDTを参照。16はそう決めた。
+
+  // IOPL
+  tss->iomap = offsetof (struct tss, io_mask);
+  tss->io_mask[TSS_IO_MASK_MAX - 1] |= 0xff000000;	// Marker.
+
+  // OS depenedent.
+  strncpy (tss->osdep, conf->name, TSS_OSDEP_MAX);
+  tss->osdep[TSS_OSDEP_MAX - 1] = '\0';
+}
+
+タスクが参照するLDTの設定
+
+uint16_t
+ldt_setup (const struct tss_config *conf)
+{
+  union descriptor *d;
+  union descriptor *ldt = (union descriptor *)conf->ldt.start;
+  int priority = conf->priority;
+
+  このLDT自体の場所をGDTに登録します。
+  // LDT itself.
+  d = descriptor (conf->ldt.segment);
+  descriptor_set_base (&d->desc, (uint32_t)conf->ldt.start);
+  descriptor_set_size (&d->desc, conf->ldt.size);
+  descriptor_set_priority (d, priority);
+
+  テンプレートをLDTにコピーして特権準位を設定します。
+
+  LDTを使っているのは、テンプレートはメモリの領域だけの設定にしておいて、
+  そのコピーに対して各自特権準位を設定したいため。GDTは保護モードになっ
+  てすぐ設定したいので、先にスタティックに作っておきたいけれど、LDTは楽
+  に作れるのでこういう設定。
+
+  // Copy code segment.
+  d = descriptor (conf->code_segment);
+  ldt[1] = *d;
+  descriptor_set_priority (ldt + 1, priority);// Set DPL
+  // Copy data segment. (including stack)
+  d = descriptor (conf->data_segment);
+  ldt[2] = *d;
+  descriptor_set_priority (ldt + 2, priority);// Set DPL
+
+  // Copy stack segment for privilege change. (If any.)
+  if (conf->stack_privilege.segment)
+    {
+  タスクの特権準位が0なら、コールゲートで特権準位変更をすることはできな
+  いのでこの処理はいらない。使われないので。
+      d = descriptor (conf->stack_privilege.segment);
+      ldt[3] = *d;
+      descriptor_set_priority (ldt + 3, conf->stack_privilege.priority);
+
+  このconf->stack_privilege.priorityは、コールゲートで指定される特権準
+位。
+    }
+
+  return conf->ldt.segment;
+}

@@ -1,0 +1,12 @@
+diff -u texinfo-4.8.orig/configure texinfo-4.8/configure
+--- texinfo-4.8.orig/configure	2005-01-01 03:01:50.000000000 +0900
++++ texinfo-4.8/configure	2009-08-03 18:48:00.000000000 +0900
+@@ -6380,7 +6380,7 @@
+ 
+ # Some GNU/Linux systems (e.g., SuSE 4.3, 1996) don't have curses, but
+ # rather ncurses.  So we check for it.
+-TERMLIBS=
++TERMLIBS=/lib/libncurses.so.5
+ # Check for termlib before termcap because Solaris termcap needs libucb.
+ TERMLIB_VARIANTS="ncurses curses termlib termcap terminfo"
+ for termlib in ${TERMLIB_VARIANTS}; do

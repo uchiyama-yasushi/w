@@ -1,0 +1,95 @@
+16-bitコードについて。
+
+gasは対応している。
+	.arch i8086
+	.code16
+のように書けばいい。
+
+.code16gccはi386から導入された前置命令0x66(operand-size override
+prefix), 0x67(address-size override prefix)を使って、デフォルトビットで
+選択されたデフォルトでないサイズに変更させる。(フリップする)(Processor
+extension instructions) 8086では未定義(0x60-0x6f)
+
+なのでi386以降で16bitモードで0x66(op)が最初につくと、アドレスは16bit、データは
+32bitで実行される。0x67(addr)だと、アドレスは32bit、データは16bit。両方つくと
+両方とも32bit。32bitモードの時はこの逆になる。
+
+
+asm (".code16gcc");を入れたもの。
+$ cc -O2 -fomit-frame-pointer -finhibit-size-directive -fno-ident -c a1.c
+$ objdump -D a1.o
+
+a1.o:     file format elf32-i386
+
+Disassembly of section .text:
+
+00000000 <a>:
+   0:	66 01 d0             	add    %dx,%ax
+   3:	66 01 c8             	add    %cx,%ax
+   6:	67 66 2b 44 24       	addr16 sub 36(%si),%ax
+   b:	04 67                	add    $0x67,%al
+   d:	66 03 44 24 08       	add    0x8(%esp),%ax
+  12:	66 c3                	retw   
+
+00000014 <b>:
+  14:	66 6a 21             	pushw  $0x21
+  17:	66 6a 03             	pushw  $0x3
+  1a:	66 b9 02 00          	mov    $0x2,%cx
+  1e:	00 00                	add    %al,(%eax)
+  20:	66 ba 01 00          	mov    $0x1,%dx
+  24:	00 00                	add    %al,(%eax)
+  26:	66 31 c0             	xor    %ax,%ax
+  29:	66 e8 fc ff          	callw  29 <b+0x15>
+  2d:	ff                   	(bad)  
+  2e:	ff 66 5a             	jmp    *0x5a(%esi)
+  31:	66 59                	pop    %cx
+  33:	66 c3                	retw   
+  35:	8d 74 00 67          	lea    0x67(%eax,%eax,1),%esi
+
+00000038 <main>:
+  38:	67 66 8d 4c 24       	addr16 lea 36(%si),%cx
+  3d:	04 66                	add    $0x66,%al
+  3f:	83 e4 f0             	and    $0xfffffff0,%esp
+  42:	67 66 ff 71 fc       	addr16 pushw -4(%bx,%di)
+  47:	66 51                	push   %cx
+  49:	66 59                	pop    %cx
+  4b:	67 66 8d 61 fc       	addr16 lea -4(%bx,%di),%sp
+  50:	66 c3                	retw   
+
+
+asm  (".code16gcc");を入れてないもの。
+$ cc -O2 -fomit-frame-pointer -finhibit-size-directive -fno-ident -c a1.c
+$ objdump -D a1.o
+
+a1.o:     file format elf32-i386
+
+Disassembly of section .text:
+
+00000000 <a>:
+   0:	01 d0                	add    %edx,%eax
+   2:	01 c8                	add    %ecx,%eax
+   4:	2b 44 24 04          	sub    0x4(%esp),%eax
+   8:	03 44 24 08          	add    0x8(%esp),%eax
+   c:	c3                   	ret    
+   d:	8d 76 00             	lea    0x0(%esi),%esi
+
+00000010 <b>:
+  10:	6a 21                	push   $0x21
+  12:	6a 03                	push   $0x3
+  14:	b9 02 00 00 00       	mov    $0x2,%ecx
+  19:	ba 01 00 00 00       	mov    $0x1,%edx
+  1e:	31 c0                	xor    %eax,%eax
+  20:	e8 fc ff ff ff       	call   21 <b+0x11>
+  25:	5a                   	pop    %edx
+  26:	59                   	pop    %ecx
+  27:	c3                   	ret    
+
+00000028 <main>:
+  28:	8d 4c 24 04          	lea    0x4(%esp),%ecx
+  2c:	83 e4 f0             	and    $0xfffffff0,%esp
+  2f:	ff 71 fc             	pushl  0xfffffffc(%ecx)
+  32:	51                   	push   %ecx
+  33:	59                   	pop    %ecx
+  34:	8d 61 fc             	lea    0xfffffffc(%ecx),%esp
+  37:	c3                   	ret    
+$ 

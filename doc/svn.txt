@@ -1,0 +1,3 @@
+svn co svn+ssh://uch@agate/home/uch/svnroot/trunk/w2
+
+svn propset svn:ignore -F .svnignore .

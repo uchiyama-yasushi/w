@@ -1,0 +1,184 @@
+割り込み、例外について。
+
+これらのエントリはゲートデスクリプタで指定する。
+
+ゲートはコールするセレクタ:オフセットを設定するもの。コールゲートの場合、
+callerとcalleeの間の引数の引き渡しのためにスタックをコピーするため、い
+くつコピーするかの情報がさらに必要になる。割り込みゲートは自動的に割り
+込みを制限する。
+
+ゲートデスクリプタはinterrupt, trap, call, taskの4つがある。
+
+コールゲートはjmp/call命令でそのセレクタを指定することで間接的にジャンプ
+する。
+
+タスクゲートはjmp/call命令でそのゲートセレクタを指定すると、ゲートに指
+定されたセレクタに指定されるタスクに切り替わる。
+
+jmp命令では準位をまたいだ移行はできない。callのみ準位をまたげる。
+
+ゲートを登録できるテーブルには制限がある。
+
+  GDT ... code, data, stack | call, task,            | tss, ldt
+  LDT ... code, data, stack | call, task,            |
+  IDT ...                   |       task, intr, trap |
+
+IDTにタスクゲートを登録できるのは割り込みによってタスク切り替えをする
+ことを想定したのだろう。
+
+割り込みゲートとトラップゲートの違いは、ゲートに入った時にEFLAGSのIFが
+クリアされる(割り込みゲート)かされないか(トラップゲート)。
+
+保護モード用にIDTを設定したら、リアルモードに戻る前にリアルモードのベク
+タテーブル位置(0x0-0x3ff)をlimitとして設定したIDTに登録しなおす。デスク
+リプタのリミットはリアルモードでも適用されるから。
+
+保護モードのIDTの最初の32個(0x00-0x1f)はプロセッサによって予約されてい
+る。なのでユーザが定義できるのは0x20-0xff。
+
+  0     divide by zero
+  1     single step/ trap, interrupt.
+  2     nmi
+  3     break point
+  4     interrupt on overflow
+  5     bound range exceeded
+  6     invalid opcode
+  7     processor extension not available
+ *8     double exception
+  9     processor extension segment overrun
+ *a     invalid task state segment
+ *b     segment not present
+ *c     stack segment overrun of not present
+ *d     general protection
+ #e     page fault.
+  f     reserved by intel
+  10    coprocessor error
+ *11    alignment
+  12    machine check
+  13-1f reserved by intel.
+
+  * push error code
+  # push error code (special)
+
+プロセッサからの例外のうち、8,10,11,12,13,14,17はエラーコードをプッシュ
+してくるので、IRETする前にプッシュされた分を戻さないといけない。
+
+    +---------------+
+    |     EFLAGS    |-4
+    +---------------+
+    |     CS        |-8
+    +---------------+
+    |     EIP       |-12 <-ESP
+    +---------------+
+    |  Error code   |-16 <-ESP (8,10,11,12,13,14,17) *,#
+    +---------------+
+    |               |
+           ...
+    |               | stack_top
+    +---+---+---+---+
+      3   2   1   0
+
+ゲートに入る時はEFLAGS, CS, EIPの順にスタックに積まれる。IRET命令はこれ
+をそのまま復帰する。
+
+スレッドの実装ではnear callで呼ばれたスタック構成をIRETでリターンできるように
+再構成することにした。
+
+        /* void do_thread_switch (void) */
+        /* Assume already interrupt disabled */
+        /* Called from thread context */
+        .code32
+FUNC (do_thread_switch)
+        /*
+        Rearrange stack frame for IRET.
+             before   ---->  after
+        |               ||               |
+        +---------------++---------------+
+ESP ->  |     EIP       ||    EFLAGS     |
+        +---------------++---------------+
+        |               ||    CS         |
+        +---------------++---------------+
+        |               ||    EIP        | <-ESP
+        +---------------++---------------+
+        |               ||               |
+        +---------------++---------------+
+        |               ||               |
+        ...              ...
+        |               ||               |
+        +---+---+---+---++---+---+---+---+ stack_top
+            3   2   1   0    3   2   1   0
+        */
+        popl    %eax    // EIP
+        pushf           // EFLAGS
+        subl    %edx,   %edx
+        movw    %cs,    %dx
+        pushl   %edx    // CS
+        pushl   %eax    // EIP
+        //
+        // save context.
+        movl    current_thread, %ecx
+        movl    %esp, 0x1c (%ecx)
+        movl    %ebp, 0x18 (%ecx)
+        movl    %edi, 0x14 (%ecx)
+        movl    %esi, 0x10 (%ecx)
+        movl    %ebx, 0x04 (%ecx)
+        // no need to store caller saved. (this is subroutine call.)
+
+        call    thread_context_switch
+        movl    current_thread, %eax
+
+        // restore all. thread may be suspended by interrupt.
+        movl    0x1c (%eax), %esp
+        movl    0x18 (%eax), %ebp
+        movl    0x14 (%eax), %edi
+        movl    0x10 (%eax), %esi
+        movl    0x0c (%eax), %edx
+        movl    0x08 (%eax), %ecx
+        movl    0x04 (%eax), %ebx
+        movl    0x00 (%eax), %eax
+        //
+        // resume EFLAGS/CS. and return
+        iret
+
+スレッドを作成する時にはこの通りにスタックを設定する。IRETした先が関数の
+入り口になるので、こうなる。EFLAGSのIF設定に配慮が必要かも。
+
+  struct iret_stack
+  {
+    uint32_t eip;
+    uint32_t cs;
+    uint32_t eflags;
+    uint32_t noreturn;  // place holder.
+    uint32_t arg;
+  } __attribute ((packed)) *iret_arg;
+
+  /*
+                     stack_bottom
+    +---------------+
+    |  1st arg      |-4
+    +---------------+
+    |return address |-8
+    +---------------+
+    |     EFLAGS    |-12
+    +---------------+
+    |     CS        |-16
+    +---------------+
+    |     EIP       |-20  <-ESP
+    +---------------+
+    |               |
+           ...
+    |               | stack_top
+    +---+---+---+---+
+      3   2   1   0
+
+   */
+  __thread_setup (tc, stack_size, name);
+  tc->regs.sp = (addr_t)(tc->stack_bottom - sizeof (struct iret_stack));
+
+  // install return address for 'IRET'
+  iret_arg = (struct iret_stack *)tc->regs.sp;
+  iret_arg->eflags      = eflags_get ();
+  iret_arg->cs          = cs_get ();
+  iret_arg->eip         = (addr_t)start;
+  iret_arg->noreturn    = (uint32_t)thread_machdep_noreturn_assert;
+  iret_arg->arg         = arg;

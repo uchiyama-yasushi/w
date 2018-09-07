@@ -1,0 +1,12 @@
+Supported host system: NetBSD/i386 and NetBSD/amd64.
+make sure to add 'file-system 	SYSVBFS' to kernel configuration.
+
+# chown 'user':'group' /dev/ld* /dev/rld*
+# chown 'user':'group' /dev/vnd* /dev/rvnd*
+# chown 'user':'group' /mnt
+# echo 'sysctl -w vfs.generic.usermount=1' >> /etc/rc.local
+
+At 1st, type 'gmake kickstart'. build compiler(gcc) and library(newlib)
+for supported architecture.
+
+/bin/bash is required. (gmp-4.3.2)

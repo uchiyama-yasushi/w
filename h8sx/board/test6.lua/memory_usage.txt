@@ -1,0 +1,82 @@
+SIO@
+stack_start: 0xffc000
+ROM data: 0x2dbe8-0x2dd34
+RAM data: 0xff2000-0xff214c 332byte
+bss: 0xff214c-0xff2244 248byte
+VBR: 0x0 (0x0)
+PA7 clock output: On
+Input clock: 12000000Hz, MDCLK=0
+System clock: x4 (48000000Hz)
+Peripheral clock: x2 (24000000Hz)
+External clock: x4 (48000000Hz)
+user> lua
+->lua
+sbrk:base=0xff2244 size=0
+sbrk:base=0xff2244 size=1024
+sbrk:base=0xff2644 size=0
+sbrk:base=0xff2644 size=1024
+sbrk:base=0xff2a44 size=0
+sbrk:base=0xff2a44 size=1024
+sbrk:base=0xff2e44 size=0
+openlib start: heap 0xff2244-0xff2e44 (3072), stack 0xffbd48-0xffc000 (696) remain 36612
+sbrk:base=0xff2e44 size=0
+: heap 0xff2244-0xff2e44 (3072), stack 0xffbd3c-0xffc000 (708) remain 36600
+sbrk:base=0xff2e44 size=0
+sbrk:base=0xff2e44 size=0
+sbrk:base=0xff2e44 size=1024
+sbrk:base=0xff3244 size=0
+sbrk:base=0xff3244 size=1024
+sbrk:base=0xff3644 size=0
+sbrk:base=0xff3644 size=1024
+sbrk:base=0xff3a44 size=0
+package: heap 0xff2244-0xff3a44 (6144), stack 0xffbac0-0xffc000 (1344) remain 32892
+sbrk:base=0xff3a44 size=0
+sbrk:base=0xff3a44 size=1024
+sbrk:base=0xff3e44 size=0
+sbrk:base=0xff3e44 size=2048
+sbrk:base=0xff4644 size=0
+table: heap 0xff2244-0xff4644 (9216), stack 0xffbac0-0xffc000 (1344) remain 29820
+sbrk:base=0xff4644 size=0
+io: heap 0xff2244-0xff4644 (9216), stack 0xffbac0-0xffc000 (1344) remain 29820
+sbrk:base=0xff4644 size=0
+sbrk:base=0xff4644 size=1024
+sbrk:base=0xff4a44 size=0
+sbrk:base=0xff4a44 size=1024
+sbrk:base=0xff4e44 size=0
+os: heap 0xff2244-0xff4e44 (11264), stack 0xffbac0-0xffc000 (1344) remain 27772
+sbrk:base=0xff4e44 size=0
+sbrk:base=0xff4e44 size=1024
+sbrk:base=0xff5244 size=0
+sbrk:base=0xff5244 size=2048
+sbrk:base=0xff5a44 size=0
+string: heap 0xff2244-0xff5a44 (14336), stack 0xffbac0-0xffc000 (1344) remain 24700
+sbrk:base=0xff5a44 size=0
+debug: heap 0xff2244-0xff5a44 (14336), stack 0xffbac0-0xffc000 (1344) remain 24700
+sbrk:base=0xff5a44 size=0
+sbrk:base=0xff5a44 size=1024
+Lua 5.1.4  Copyright (C) 1994-2008 Lua.org, PUC-Rio
+> io.write ("hello", _VERSION,"\n")
+sbrk:base=0xff5e44 size=0
+sbrk:base=0xff5e44 size=1024
+fwrite
+hellofwrite
+Lua 5.1fwrite
+
+sbrk:base=0xff6244 size=0
+lua_pcall: heap 0xff2244-0xff6244 (16384), stack 0xffb648-0xffc000 (2488) remain 21508
+> x=3
+sbrk:base=0xff6244 size=0
+lua_pcall: heap 0xff2244-0xff6244 (16384), stack 0xffb648-0xffc000 (2488) remain 21508
+> y=4
+sbrk:base=0xff6244 size=0
+lua_pcall: heap 0xff2244-0xff6244 (16384), stack 0xffb648-0xffc000 (2488) remain 21508
+> z=x*y
+sbrk:base=0xff6244 size=0
+sbrk:base=0xff6244 size=1024
+sbrk:base=0xff6644 size=0
+lua_pcall: heap 0xff2244-0xff6644 (17408), stack 0xffb648-0xffc000 (2488) remain 20484
+> io.write ("ohayo",x,y,z)
+fwrite
+ohayo3412sbrk:base=0xff6644 size=0
+lua_pcall: heap 0xff2244-0xff6644 (17408), stack 0xffb648-0xffc000 (2488) remain 20484
+> 

@@ -1,0 +1,47 @@
+デバッグ
+DEBUG 
+THREAD_DEBUG, THREAD_VERBOSE
+MONITOR_DEBUG, MONITOR_VERBOSE
+
+SYSTEM_CLOCK=16
+システムクロックをMHz単位で指定。3052は対応していない。
+3664(16MHz)と3694(20MHz)のみ対応。
+
+機能
+THREAD_DISABLE
+スレッド機能なし。
+BUFFERD_CONSOLE_DISABLE
+バッファコンソールなし。これはスレッド機能が必要。
+SHELL_DISABLE
+シェルなし。
+PROMPT_BUFFER_SIZE	32
+プロンプトバッファの最大入力
+PROMPT_HISTORY_CONF	2
+ヒストリの最大数。1 << PROMPT_HISTORY_CONFになる。
+PROMPT			">"
+プロンプト。
+SHELL_CMDARG_MAX	4
+シェルコマンドの最大引数。
+THREAD_STACKSIZE_DEFAULT	512
+スレッドのスタックサイズのデフォルト。ほとんどこれを参照している。
+THREAD_PRIORITY_MAX	4
+プライオリティの数。増減するにはまだ要改造。
+
+DELAY_CALIBRATE_DISABLE
+delayパラメータの再キャリブレートをしません。
+SMALL_PRINTF
+拡張%A, %Dを使いません。
+
+
+SCI_FIFO_SIZE		32
+スレッド間のリングバッファ及び、割りこみハンドラ間のリングバッファのサイズ。
+SCI_STACK_SIZE		THREAD_STACKSIZE_DEFAULT
+受信、送信スレッドのスタックサイズ。
+SCI_SPEED_BRR
+ボードレートを直指定。
+
+CALIPER_SHELL_COMMAND
+ノギス用のシェルコマンドを有効にする。
+
+LCD_DISABLE
+ボード内蔵LCDモジュールを無効にする。

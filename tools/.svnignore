@@ -1,0 +1,13 @@
+rx-elf
+arm-elf
+bin
+h8300-elf
+i386-elf
+sh-elf
+include
+info
+lib
+libexec
+man
+share
+work

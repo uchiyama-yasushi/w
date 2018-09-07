@@ -1,0 +1,288 @@
+monitor.cnfの内容(3052 25MHz 115200bps)
+57600bps用にはDEFINE  $BRR(0d)にする。
+計算式は
+// 25*1000000/(64*2^(2*0 - 1)*115200) - 1 = 5.78
+// 25*1000000/(64*2^(2*0 - 1)*57600) - 1 = 12.56
+USER(0FDF10)がユーザの仮想ベクタ領域の指定なので、このモニタからロード
+されるプログラムのベクタ領域はそこを指定する。
+       intvecs	: o = 0xfdf2c, l = 0xd8
+0xfdf2cからなのはNMIからの指定のため。0xfdf10はスタートベクタの位置
+
+
+INPUT CMD02,CMD04,CMD05,CMD06,CMD07,CMD08,CMD09,CMD10,CMD11,CMD13
+INPUT CMD14,CMD16,CMD17,CMD19,CMD20,CMD21,CMD24,CMD25,CMD27,CMD28
+INPUT CMD30,CMD31,CMD32,CMD33,CMD34,CMD35,CMD36,CMD37,CMD38
+INPUT DMY01,DMY03,DMY12,DMY15,DMY18,DMY23,DMY26,DMY29,DMY39,DMY41
+INPUT MOD01,MOD02,MOD03,MOD04,MOD05,MOD06,MOD07,MOD08,MOD09,MOD10,MOD11
+INPUT MOD12,MOD13,MOD14,MOD15,MOD16,MOD17,MOD18,MOD19,MOD20,MOD21,MOD22
+INPUT MOD23,MOD24,MOD25,MOD26,MOD27,MOD28,MOD29,MOD30,MOD31,MOD32,MOD33
+INPUT MOD34,MOD35,MOD36,MOD37,MOD38,MOD39
+INPUT ADVANCED,MONITOR
+INPUT CPU01,CPU02,CPU03,CPU04
+PRINT   MONITOR.MAP
+OUTPUT  MONITOR.ABS
+DEFINE  $BRR(6)
+DEFINE  $STACK(0FFF00)
+START   VECTOR(0),ROM(100),RAM(0FE010),USER(0FDF10),SCI(0FFFB8)
+EXIT
+
+メモリを増設した場合にはmonitor/monitor.srcでBSC、I/Oポートを設定しておく。
+
+_INITIALIZE:
+	; ud01 IO port setting.
+	mov.b	#H'ff,r3l
+	sub.b	r2l,r2l
+
+	mov.b	r3l,@H'fffc5	; P4 DDR output
+	mov.b	r2l,@H'fffda	; P4 PCR no pull-up
+	mov.b	r2l,@H'fffc7	; P4 DR = 0;
+
+	mov.b	r2l,@H'fffdb	; P5 PCR = 0;	
+
+	mov.b	r2l,@H'fffcb	; P6 DR = 0;	
+
+	mov.b	r3l,@H'fffcd	; P8 DDR output
+	mov.b	r2l,@H'fffcf	; P8 DR = 0;
+
+	mov.b	r3l,@H'fffd1	; PA output
+	mov.b	r2l,@H'fffd3	; PA DR = 0;
+
+	mov.b	r3l,@H'fffd4	; PB output
+	mov.b	r2l,@H'fffd6	; PB DR = 0;
+
+	mov.b	#H'cf, r3l	; ~0x30
+	mov.b	r3l,@H'fffd0	; P9 4,5 input
+
+	; ud01 BSC setting
+	mov.b	#H'ff,r3l
+	mov.b	r3l,@H'fffec
+
+	mov.b	#H'70,r0l
+	mov.b	r0l,@H'fffed
+
+	mov.b	#H'3,r2l
+	mov.b	r2l,@H'fffee
+
+	mov.b	#H'40,r2l
+	mov.b	r2l,@H'fffef
+
+	sub.b	r2l,r2l
+	mov.b	r2l,@H'ffff3
+
+	mov.b	r0l,@H'fff5f
+
+	mov.b	r3l,@H'fffc0
+	mov.b	r3l,@H'fffc1
+	add.b	#H'1,r2l
+	mov.b	r2l,@H'fffc8
+	mov.b	#H'6,r2l
+	mov.b	r2l,@H'fffc9
+
+	JMP     @ER5                    ; Goto Monitor Program
+        .END                            ;
+
+
+バッチファイル
+
+SET PATH=z:\h8\aki\asm;%PATH%
+mkdir objs
+
+COPY ..\monitor\monitor.src monitor.src
+a38h monitor.src -CPU=300HA
+MOVE monitor.obj Objs
+MOVE Monitor.lis Objs
+cd advcmd
+a38h CMD02.SRC -CPU=300HA
+a38h CMD04.SRC -CPU=300HA
+a38h CMD05.SRC -CPU=300HA
+a38h CMD06.SRC -CPU=300HA
+a38h CMD07.SRC -CPU=300HA
+a38h CMD08.SRC -CPU=300HA
+a38h CMD09.SRC -CPU=300HA
+a38h CMD10.SRC -CPU=300HA
+a38h CMD11.SRC -CPU=300HA
+a38h CMD13.SRC -CPU=300HA
+a38h CMD14.SRC -CPU=300HA
+a38h CMD16.SRC -CPU=300HA
+a38h CMD17.SRC -CPU=300HA
+a38h CMD19.SRC -CPU=300HA
+a38h CMD20.SRC -CPU=300HA
+a38h CMD21.SRC -CPU=300HA
+a38h CMD24.SRC -CPU=300HA
+a38h CMD25.SRC -CPU=300HA
+a38h CMD27.SRC -CPU=300HA
+a38h CMD28.SRC -CPU=300HA
+a38h CMD30.SRC -CPU=300HA
+a38h CMD31.SRC -CPU=300HA
+a38h CMD32.SRC -CPU=300HA
+a38h CMD33.SRC -CPU=300HA
+a38h CMD34.SRC -CPU=300HA
+a38h CMD35.SRC -CPU=300HA
+a38h CMD36.SRC -CPU=300HA
+a38h CMD37.SRC -CPU=300HA
+a38h CMD38.SRC -CPU=300HA
+move *.obj ..\objs
+move *.lis ..\objs
+cd ..
+cd advdmy
+a38h DMY01.SRC -CPU=300HA
+a38h DMY03.SRC -CPU=300HA
+a38h DMY12.SRC -CPU=300HA
+a38h DMY15.SRC -CPU=300HA
+a38h DMY18.SRC -CPU=300HA
+a38h DMY23.SRC -CPU=300HA
+a38h DMY26.SRC -CPU=300HA
+a38h DMY29.SRC -CPU=300HA
+a38h DMY39.SRC -CPU=300HA
+a38h DMY41.SRC -CPU=300HA
+move *.obj ..\objs
+move *.lis ..\objs
+cd ..
+cd advmod
+a38h MOD01.SRC -CPU=300HA
+a38h MOD02.SRC -CPU=300HA
+a38h MOD03.SRC -CPU=300HA
+a38h MOD04.SRC -CPU=300HA
+a38h MOD05.SRC -CPU=300HA
+a38h MOD06.SRC -CPU=300HA
+a38h MOD07.SRC -CPU=300HA
+a38h MOD08.SRC -CPU=300HA
+a38h MOD09.SRC -CPU=300HA
+a38h MOD10.SRC -CPU=300HA
+a38h MOD11.SRC -CPU=300HA
+a38h MOD12.SRC -CPU=300HA
+a38h MOD13.SRC -CPU=300HA
+a38h MOD14.SRC -CPU=300HA
+a38h MOD15.SRC -CPU=300HA
+a38h MOD16.SRC -CPU=300HA
+a38h MOD17.SRC -CPU=300HA
+a38h MOD18.SRC -CPU=300HA
+a38h MOD19.SRC -CPU=300HA
+a38h MOD20.SRC -CPU=300HA
+a38h MOD21.SRC -CPU=300HA
+a38h MOD22.SRC -CPU=300HA
+a38h MOD23.SRC -CPU=300HA
+a38h MOD24.SRC -CPU=300HA
+a38h MOD25.SRC -CPU=300HA
+a38h MOD26.SRC -CPU=300HA
+a38h MOD27.SRC -CPU=300HA
+a38h MOD28.SRC -CPU=300HA
+a38h MOD29.SRC -CPU=300HA
+a38h MOD30.SRC -CPU=300HA
+a38h MOD31.SRC -CPU=300HA
+a38h MOD32.SRC -CPU=300HA
+a38h MOD33.SRC -CPU=300HA
+a38h MOD34.SRC -CPU=300HA
+a38h MOD35.SRC -CPU=300HA
+a38h MOD36.SRC -CPU=300HA
+a38h MOD37.SRC -CPU=300HA
+a38h MOD38.SRC -CPU=300HA
+a38h MOD39.SRC -CPU=300HA
+move *.obj ..\objs
+move *.lis ..\objs
+cd ..
+cd advsrc
+a38h advanced.src -CPU=300HA
+move *.obj ..\objs
+move *.lis ..\objs
+cd ..
+cd advtip\3052
+a38h cpu01.src -CPU=300HA
+a38h cpu02.src -CPU=300HA
+a38h cpu03.src -CPU=300HA
+a38h cpu04.src -CPU=300HA
+move *.obj ..\..\objs
+move *.lis ..\..\objs
+cd ..\..
+COPY MONITOR.CNF OBJS\MONITOR.SUB
+cd objs
+L38H /SUB=MONITOR.SUB
+C38H MONITOR
+COPY MONITOR.MOT ..
+cd ..
+
+
+
+ H8/3052 Advanced Mode Monitor Ver. 3.0A
+ Copyright (C) 2003 Renesas Technology Corp.
+
+: ?
+ Monitor Vector 00000 - 000FF
+ Monitor ROM    00100 - 059EB
+ Monitor RAM    FE000 - FE0D3
+ User    Vector FDF10 - FE00F
+
+ .  : Changes contents of H8/300H registers.
+ A  : Assembles source sentences from the keyboard.
+ B  : Sets or displays or clear breakpoint(s).
+ D  : Displays memory contents.
+ DA : Disassembles memory contents.
+ F  : Fills specified memory range with data.
+ G  : Executes real-time emulation.
+ H8 : Displays contents of H8/3052 peripheral registers.
+ L  : Loads user program into memory from host system.
+ M  : Changes memory contents.
+ R  : Displays contents of H8/300H registers.
+ S  : Executes single emulation(s) and displays instruction and registers.
+: r
+  PC=000000  CCR=80:I.......  SP=000FFF00
+  ER0=00000000  ER1=00000000  ER2=00000000  ER3=00000000
+  ER4=00000000  ER5=00000000  ER6=00000000  ER7=000FFF00
+: h8 sci0
+ <REG>  <ADDR> <CODE>   < 7      6      5      4      3      2      1      0 >
+ SMR     FFB0 00000000   C/A    CHR     PE    O/E    STOP    MP    CKS1   CKS0 
+ BRR     FFB1 FF
+ SCR     FFB2 00000000   TIE    RIE     TE     RE    MPIE   TEIE   CKE1   CKE0 
+ TDR     FFB3 FF
+ SSR     FFB4 10000100   TDRE   RDRF   ORER   FER    PER    TEND   MPB    MPBT 
+ RDR     FFB5 00
+ SCMR    FFB6 ....00.0                               SDIR   SINV          SMIF 
+: 
+
+
+H8/3052
+ROM 512KByte
+RAM 8KByte
+----------------------------------------------------------------------
+モード7                   MONITORの設定
++---------0x00000         VECTOR(0)
+|vector(0x00-0xf3)
+|---------0x000ff         ROM(100)
+|
+ROM                       --------最大 0x5d00
+|
+|
+|
++---------0x7ffff
+
+
+
+
+
+
++---------0xfdf10         USER(0FDF10)ユーザプログラムの仮想ベクタ領域
+|                         ----vector end (0xfe00f)
+|                         RAM(0FE010) モニタが使用するRAM領域
+RAM                       ----モニタ最大 0xfe18c
+|                         ----ユーザプログラムのスタート 0xfe200
+|                                7424Byte
++---------0xfff0f         STACK(0FFF00)ユーザプログラムの初期SP値
+
+
++---------0xfff1c
+|I/O                      SCI(0FFFB8)
++---------0xfffff
+----------------------------------------------------------------------
+モード7は1Mバイトモード。
+モードはMDCR(0xffff1)で確認できる
+
+モニタ上のユーザプログラムを配置する領域は0xfe010-0xfdfff
+モニタのリソースは
+ROM 2-23KByte
+RAM 130-380Byte
+
+
+秋月のオブジェクトコンバーターはチェックサムが2の補数なのに対してルネサ
+スのモニタは1の補数のチェックサムしか受けいれない。
+h8300-hms-objcopy a.MOT b.mot
+で変換する。

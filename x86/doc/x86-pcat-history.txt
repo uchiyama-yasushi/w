@@ -1,0 +1,74 @@
+----------------------------------------
+IBM PC
+CPU: 8088
+Bus: XTバス (8bit ISA)
+Video: MDA (Monochrome Display Adaptor) 720x250 80x25テキスト
+       CGA (Color Graphics Adaptor) 640x200/2色, 320x200/4色, 80x25テキスト/16色
+----------------------------------------
+メモリマップ。
+
+-------------------- 0xfffff
+64KB Boot ROM        
+-------------------- 0xf0000
+		     0xeffff
+64KB Option ROM	     
+-------------------- 0xe0000
+                     0xdffff
+128KB Reserved
+Device ROM
+                     
+-------------------- 0xc0000
+                     0xbffff
+128KB 
+Video Memory
+                     
+-------------------- 0xa0000
+                     0x9ffff
+
+
+640KB Conventional Memory
+
+
+-------------------- 0x00000
+
+Option ROMはボードの空きソケットに差して追加デバイス用のBIOSを提供する
+ものだった。このメモリマップは以降変わらない。PC/XTはIBM PCの一種。
+
+
+----------------------------------------
+IBM PC/AT
+CPU: 80286
+Bus: ISA
+Video: EGA CGA+ 640x250/16色
+----------------------------------------
+
+----------------------------------------
+IBM PS/2
+CPU: 80286
+Bus: ISA, MCA
+Video: VGA 640x480/16色, 320x200/256色 アナログRGB
+
+
+ISAバスの割り込み。
+3 COM2
+4 COM1
+5 LPT2
+6 FDC
+7 LPT1
+9 (2)
+10
+11
+12 Mouse
+14 Hard disk
+15
+
+ISAバスでない(結線がない)割り込み
+0 System Timer
+1 Keyboard
+2 Cascade interrupt from slave PIC
+8 RTC
+13 FPU
+
+ISAバスの割り込みでマウスになっているけれど、IRQ12が内部のマウス割り込
+みとORになっているので、ISAバスからもそのIRQを使えるという意味。マウス
+自体はキーボードと同じ8042が受けもつ。

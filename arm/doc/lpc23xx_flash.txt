@@ -1,0 +1,272 @@
+uslsa0 at uhub0 port 3
+uslsa0: Silicon Labs CP2102 USB to UART Bridge Controller, rev 1.10/1.00, addr 4
+ucom0 at uslsa0: Silicon Labs CP210x
+
+/etc/remote
+
+umon:dv=/dev/dtyU0:br#115200:pa=none:dc:
+
+$ tip umon
+connected
+Synchronized
+OKnchronized
+
+'?'を叩くと、自動ボーレート合わせこみが完了しSynchronizedと返事が
+来る。そこ後ホスト側からもSynchronizedと叩く。OKと返事が来る。
+周波数を設定するために12000と叩く(12MHz)
+
+
+'K'コマンド(Read Boot Code version number)
+0	CMD_SUCCESS
+3	Major
+3	Minor
+
+'J'コマンド(Read Part Identification number)
+0		CMD_SUCCESS
+402718517	Table 29.543 LPC2300 part Identification numbers (LPC2388)
+
+
+'U'コマンド (Unlock)
+12	PARAM_ERROR
+
+U 23130
+0	CMD_SUCCESS
+
+'R' (Read Memory)
+R 0 64
+
+M&$"?Y1!0G^4`8)3E!F`%X`!@A.4$\!_E0.#_?_^___\`@/\_````````````
+3````````````````````````````
+4797
+
+R 0 32
+
+0 0 32
+@&$"?Y1!0G^4`8)3E!F`%X`!@A.4$\!_E0.#_?_^_____
+4351
+
+この後ホスト側からOKを返してコマンド終了。
+
+0 0 4
+$&$"?Y>7E
+476
+
+$&$"?Y>7Eをuudecodeすると、0x18,0x40,0x9f,0xe5。0x18+0x40+0x9f+0xe5=476
+
+例えば0x0からを読み出し、uudecodeして
+arm-elf-objcopy -I binary -O elf32-littlearm test.bin test.elf
+arm-elf-objdump -m arm -D test.elf
+したもの。arm-elf-objdumpのバグで一度ELFにしないとバイナリから直接ディ
+スアセンブルできない。
+
+00000000 <_binary_test_bin_start>:
+   0:	e59f4018 	ldr	r4, [pc, #24]	; 20 <_binary_test_bin_start+0x20> r4 = 0x3fff8000 PARTCFG REGISTER
+   4:	e59f5010 	ldr	r5, [pc, #16]	; 1c <_binary_test_bin_start+0x1c> r5 = ~0x4000
+   8:	e5946000 	ldr	r6, [r4]	; r6 = *((int32_t *)0x3fff8000)
+   c:	e0056006 	and	r6, r5, r6	; r6 &= ~0x4000
+  10:	e5846000 	str	r6, [r4]	; *((int32_t *)0x3fff8000) = r6
+  14:	e51ff004 	ldr	pc, [pc, #-4]	; 18 <_binary_test_bin_start+0x18> jump to 0x7fffe040
+  18:	7fffe040 	svcvc	0x00ffe040
+  1c:	ffffbfff 	undefined instruction 0xffffbfff
+  20:	3fff8000 	svccc	0x00ff8000
+	...
+  40:	ffffffff 	undefined instruction 0xffffffff
+PARTCFG レジスタの14bitを落としてからISPコードを実行する。PARTCFGレジスタの
+詳細は不明。
+
+
+
+'G' コマンド
+G 0 A
+で0x0から実行。この場合ISPが最初から動くことになる。
+
+
+ISPはRAM 0x40000120-0x400001ffまでを使う、スタックはRAM top -32から。最
+大256byte使う。
+
+ISPとのデータのやりとりはuuencodeされたもので受けわたしする。rawdata
+45byte づつなので、通常のuuencodeでよい。異なるポイントは20ラインごとに
+チェックサムを送ること。最後の0byteラインを入れない。
+
+通常のuuencode(/usr/bin/uuencode)
+JH.,`((/E_SW@XS\Q0^(`(*#C`""#Y?\]X.,O,4/B`""@XP`@@^7^___J
+` ←これはこのラインは0ということ。uudecodeの場合これを終端と認識する。
+end
+
+の所を
+
+JH.,`((/E_SW@XS\Q0^(`(*#C`""#Y?\]X.,O,4/B`""@XP`@@^7^___J
+41994 ←チェックサムを入れる。
+
+のようにしないといけない。
+
+これらを使ってバイナリをフラッシュに書き込む手順は、まず、JP2をショート
+してJP1でリセットをかける。
+
+tipで接続。
+以下、ホストから叩く順
+?			自動合わせこみに失敗したらもう一度リセットから。通常1個叩けばよい。
+Synchronized		返答
+12000			初期状態のクロックを設定これは12MHzに設定。
+A 0			エコーバックするとISP側の処理が間にあわないのでエコーオフ
+W 1073742336 852	0x40000200(内蔵SRAM)から852byte(これはraw dataの量)書き込み。0x40000000-0x400001ffまではISPが使っているから。
+~> test.uu		送りこみ。OKが出れば完了。失敗するとRESENDと表示される。
+A 1			エコーバックするように戻す
+U 23130			アンロック。G コマンド、及びフラッシュロムの書き込みコマンドはロックがかかっているので。
+P 0 0			フラッシュ0セクタを準備
+E 0 0			フラッシュ0セクタを消去
+P 0 0			フラッシュ0セクタを準備
+C 0 1073742336 1024	フラッシュ0セクタに0x40000200(内蔵SRAM)から1024byte書き込み
+G 1073742336 A		0x40000200にジャンプ (確認)
+
+Cコマンドのフラッシュのオフセットは0からのオフセット。セクタ先頭からの
+オフセットではない。
+
+これでRAM上に乗せたプログラムが実行される。ARMの分岐はPC相対なので場所
+はどこでも動く。RAMとROMで読み出しスピードが違うのでディレイのループは
+ROMの10倍以上とる。ファイルの転送は115200bpsで大丈夫。エコーバックする
+と9600bpsでも失敗する。
+
+これでJP2をオープンにしてJP1でリセットをかけてLEDが点滅すれば成功。点滅
+せず、tipから'?'を叩いてSynchronizedと出れば、ベクターのチェックサムが
+間違っていてISPモードに落ちたということ。このチェックサムは
+
+	.section	.vector, "ax"
+	.align	2
+	.global	vector_table
+vector_table:
+	b	func0		// 0xea00007e
+	.long	0x00
+	.long	0x00
+	.long	0x00
+	.long	0x00
+	.long	0x69e23484	//チェックサムの調整部分。
+//	.long	0x07
+	.long	0xac1dcafe
+	.long	0x00
+
+0xea00007e+0xac1dcafe + 0x69e23484 = 0になるようにする。
+
+0xea+0x7e+0xac+0x1d+0xca+0xfe + 0x7 = 0x400ではだめ。
+
+Synchronized
+OKnchronized
+OK000
+0 0
+0
+~>Local file name? test.uu
+20 lines transferred in 0 seconds 
+!
+OK
+0
+0 23130
+0 1073742336 A
+
+フラッシュロムのセクタサイズはアドレスによって異なる。Section 29,
+Table 527 参照。セクタ0は4KB。書き込みの際は4KB書かなくてもよい。
+
+
+バイナリイメージからのuuencodeには
+http://www.wotsit.org/download.asp?f=uuencode&sc=298186266
+のサンプルを改造して、20ラインごとにチェックサムを出力し、最後の0byteを
+出力しないようにした。
+
+/*
+ * uuencode.c -
+ *  Simple uuencode utility
+ *  Jim Cameron, 1997
+ */
+
+#include <sys/types.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#define	MAX_LINELEN 45
+#define	ENCODE_BYTE(b) (((b) == 0) ? 0x60 : ((b) + 0x20))
+
+int
+main (int argc, char *argv[])
+{
+  FILE *infile	= NULL;
+  FILE *outfile = NULL;
+  int linelen;
+  int linecnt;
+  uint8_t inbuf[MAX_LINELEN];
+  uint8_t *inbytep;
+  char outbuf[5];
+  int i;
+
+  if (argc != 3)
+    {
+      fprintf (stderr, "Syntax: uuencode <infile> <outfile>\n");
+      exit (1);
+    }
+
+  /* Try and open the input file (binary) */
+
+  infile = fopen (argv[1], "rb");
+  if (infile == NULL)
+    {
+      fprintf (stderr, "uuencode: Couldn't open input file %s\n", argv[1]);
+      exit (1);
+    }
+
+  /* Try and open the output file (text) */
+
+  outfile = fopen (argv[2], "wt");
+  if (outfile == NULL)
+    {
+      fprintf (stderr, "uuencode: Couldn't open output file %s\n", argv[2]);
+      exit (1);
+    }
+
+  int checksum, nline;
+  checksum = 0;
+  nline = 0;
+  do
+    {
+      /* Read a line from input file */
+      linelen = fread (inbuf, 1, MAX_LINELEN, infile);
+      if (!linelen)
+	break;
+      for (i = 0; i < linelen; i++)
+	checksum += inbuf[i];
+
+      /* Write the line length byte */
+      fputc (ENCODE_BYTE (linelen), outfile);
+
+      /* Encode the line */
+      for (linecnt = linelen, inbytep = inbuf; linecnt > 0;
+	   linecnt -= 3, inbytep += 3)
+	{
+	  /* Encode 3 bytes from the input buffer */
+	  outbuf[0] = ENCODE_BYTE ((inbytep[0] & 0xFC) >> 2);
+	  outbuf[1] = ENCODE_BYTE (((inbytep[0] & 0x03) << 4) +
+				   ((inbytep[1] & 0xF0) >> 4));
+	  outbuf[2] = ENCODE_BYTE (((inbytep[1] & 0x0F) << 2) +
+				   ((inbytep[2] & 0xC0) >> 6));
+	  outbuf[3] = ENCODE_BYTE (inbytep[2] & 0x3F);
+	  outbuf[4] = '\0';
+
+	  /* Write the 4 encoded bytes to the file */
+	  fprintf (outfile, "%s", outbuf);
+	}
+
+      fprintf (outfile, "\n");
+      if (++nline == 20)
+	{
+	  fprintf (outfile, "%d\n", checksum);
+	  nline = checksum = 0;
+	}
+    }
+  while (linelen != 0);
+  if (nline)
+    fprintf (outfile, "%d\n", checksum);
+
+  fclose (infile);
+  fclose (outfile);
+
+  return 0;
+
+}
+

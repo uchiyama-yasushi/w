@@ -1,0 +1,28 @@
+all:	rom
+
+rom:
+	PROGRAM=ROM ${MAKE} build
+
+ROOT_DIR	= ../../..
+
+include ../../mk/3694.mk
+
+include ${MK_DIR}/objs.mk
+
+VPATH += ${ROOT_DIR}/common
+
+CFLAGS += -DSTATIC=
+CFLAGS += -DTHREAD_DISABLE -DTINY_PRINTF  -DPROMPT_NOEDIT
+CFLAGS += -DPROMPT="\">> \"" -DPROMPT_BUFFER_SIZE=8	\
+-DPROMPT_HISTORY_CONF=0
+CFLAGS += -DSHELL_NOBUILTIN_COMMAND
+
+KERNOBJS = ${KERN_CONSOLE_OBJS} ${KERN_CORE_OBJS} ${KERN_DELAY_OBJS}	\
+	${KERN_SHELL_OBJS}
+
+OBJS = ${H8OBJS} ${KERNOBJS} simple_monitor.o
+LIBTYPE = MINLIB
+PROGTYPE = MONITOR
+
+include ${MK_DIR}/target.mk
+include ${MK_DIR}/utils.mk

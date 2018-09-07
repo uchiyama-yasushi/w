@@ -1,0 +1,69 @@
+OUTPUT_FORMAT ("elf32-h8300")
+OUTPUT_ARCH (h8300:h8300h)
+
+/* uch's development machine 01 special */
+
+MEMORY
+{
+	start_vector	: o = 0x00000, l = 0x4
+	intvecs_rom	: o = 0x0001c, l = 0xd8
+	intvecs_ram	: o = 0xfdf2c, l = 0xd8
+/*	extram		: o = 0xbf000, l = 0xf00 AREA5 */
+/*	extram		: o = 0xfe100, l = 0x1e00 Internal SRAM (debug) */
+	extram		: o = 0x9e000, l = 0x1f00 /* AREA4 */
+	rom		: o = 0x00100, l = 0x7ff00
+}
+
+SECTIONS
+{
+/*	 _stack_start = 0xbfffc;  AREA5 */
+/*	 _stack_start = 0xffc90; Internal SRAM (debug) */
+	 _stack_start = 0x9fffc; /* AREA4 */
+
+	 .start_vector :
+	 {
+	 	LONG (ABSOLUTE (start))
+	 } > start_vector
+
+	 .intvecs_rom :
+	 {
+		*(.intvecs_rom)
+	 } > intvecs_rom
+
+	 .ctors :
+	 {
+		*(.ctors)
+	 } > rom
+
+	 .text :
+	 {
+	 	 *(.text*)
+		 *(.rodata*)
+		  *(.gcc_except_table*)
+		 . = ALIGN (4);
+	 } > rom
+
+	 _rom_data_start = .;
+	 .data :
+	 AT (ADDR (.text) + SIZEOF (.text))
+	 {
+	 	 _data_start = .;
+	 	 *(.data*)
+		*(.intvecs_ram)
+		_vector_link_table_start = .;
+		*(.vector_link_table)
+		 . = ALIGN (4);
+		  _data_end = .;
+	 } > extram
+	 _rom_data_end = _rom_data_start + SIZEOF (.data);
+
+	 .bss :
+	 {
+	         _bss_start = .;
+	      	 *(.bss*)
+	 } > extram
+	_bss_end = .;
+
+	/DISCARD/ : { *(.*debug*) }
+	/DISCARD/ : { *(.comment) }
+}

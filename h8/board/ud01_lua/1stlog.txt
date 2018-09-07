@@ -1,0 +1,56 @@
+$ tip hmon
+connected
+SIO@
+stack_start: 0x9fffc
+ROM data: 0x3d11c-0x3d694
+RAM data: 0x9e000-0x9e578 1400byte
+bss: 0x9e580-0x9fa38 5304byte
+NMI return address|CCR: 0x80008646
+delay_div=40
+calibrated. delay_div=40
+delay_div=40
+calibrated. delay_div=40
+H8/3052 ud01 Monitor Build Mar 30 2011 09:00:26
+[ VIRTUAL VECTOR TABLE *OFF* ]
+ OFF: overlay module, ON: standalone module.
+>> l
+~>Local file name? a.mot
+808 lines transferred in 1 second 
+!
+Read 18065 byte. success
+Start address: 0x813f0
+stack_start: 0x9dffc
+RAM data: 0x8181c-0x81820 4byte
+bss: 0x81820-0x81828 8byte
+NMI return address|CCR: 0x81408
+ohayo0
+->lua
+sbrk:base=0x81828 size=8
+sbrk:base=0x81830 size=1024
+sbrk:base=0x81c30 size=1024
+sbrk:base=0x82030 size=1024
+sbrk:base=0x82430 size=1024
+sbrk:base=0x82830 size=1024
+sbrk:base=0x82c30 size=1024
+sbrk:base=0x83030 size=1024
+sbrk:base=0x83430 size=2048
+sbrk:base=0x83c30 size=1024
+sbrk:base=0x84030 size=1024
+sbrk:base=0x84430 size=1024
+sbrk:base=0x84830 size=2048
+sbrk:base=0x85030 size=1024
+Lua 5.1.4  Copyright (C) 1994-2008 Lua.org, PUC-Rio
+> 
+> x=4
+> y=3
+sbrk:base=0x85430 size=1024
+> z=4+x*y
+> io.write ("hello",z,z,x,y,"world\n");
+sbrk:base=0x85830 size=1024
+stdin:1: ')' expected near '0'
+> io.write ("hello",z,x,y,"world\n")
+sbrk:base=0x85c30 size=1024
+fwrite
+hello1643fwrite
+world
+> 

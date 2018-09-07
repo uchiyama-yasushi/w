@@ -1,0 +1,168 @@
+デバッグシリアルはSCIF1を使用し、このクロックは内部のPCLKからではなく、
+外部から1.8432MHzを供給している。115200*16 = 1843200
+
+#include <system.h>
+#include <delay.h>
+
+#include <console.h>
+#include <console_machdep.h>
+
+// for interrupt context or no threading support.
+void null_putc (int8_t);
+int8_t null_getc (void);
+void isci_putc (int8_t);
+int8_t isci_getc (void);
+
+// SCIF1 P4 address
+#define	SCSMR		((volatile uint16_t *)0xffeb0000)
+#define	SCBRR		((volatile uint8_t *) 0xffeb0004)
+#define	SCSCR		((volatile uint16_t *)0xffeb0008)
+#define	SCFTDR		((volatile uint8_t *) 0xffeb000c)
+#define	SCFSR		((volatile uint16_t *)0xffeb0010)
+#define	SCFRDR		((volatile uint8_t *) 0xffeb0014)
+#define	SCFCR		((volatile uint16_t *)0xffeb0018)
+
+void
+boot_console_init (bool on)
+{
+
+  if (!on)
+    {
+      // Install place holder
+      console_putc_install (SERIAL, DIRECT, null_putc);
+      console_putc_install (SERIAL, BUFFERED, null_putc);
+      console_getc_install (SERIAL, DIRECT, null_getc);
+      console_getc_install (SERIAL, BUFFERED, null_getc);
+      return;
+    }
+
+  *SCSCR = 0x2;	/*CKE1 external clock */
+//ここで外部クロックを指定する。
+
+  *SCSCR |= (1 << 5)/*TE*/ | (1 << 4)/*RE*/;
+// 送信,受信ともに有効に。
+
+  *SCSMR = 1/*CKS0*/;
+  *SCBRR = 0;
+// 調歩同期115200bpsの場合SCBRRに設定する値Nは
+//
+//  N =(Pck * 10^6) / (8 * 2 ^(2*n - 1) * bps) -1になる。
+// この場合Pckは外部の1.8432MHz、bpsは115200なので
+//  N = 16 / (8 * 2^(2*n - 1)) - 1
+// N(SCBRR)を0に設定するとして、
+//  1 = 2/  2^(2*n  - 1)
+// なのでnは1 → CKS1=0, CKS0=1
+  *SCFCR = 0;	// FIFO、RTS/CTSの設定。まずはFIFOなしの設定。
+
+  console_putc_install (SERIAL, DIRECT, isci_putc);
+  console_putc_install (SERIAL, BUFFERED, isci_putc);
+  console_getc_install (SERIAL, DIRECT, isci_getc);
+  console_getc_install (SERIAL, BUFFERED, isci_getc);
+}
+
+// place holder for non console.
+void
+null_putc (int8_t c __attribute__((unused)))
+{
+}
+
+int8_t
+null_getc ()
+{
+
+  return 0;
+}
+
+// Simple polling routines.
+void
+isci_putc (int8_t c)
+{
+
+  if (c == '\n')
+    md_uart_putc1 ('\r');
+  md_uart_putc1 (c);
+}
+
+int8_t
+isci_getc ()
+{
+  uint8_t c;
+
+  while (((c = *SCFSR) & 0x2/*RDF*/) == 0)
+    ;
+
+  c = *SCFRDR;
+  *SCFSR &= ~0x2/*RDF*/;
+
+  return c;
+}
+
+void
+md_uart_putc1 (int8_t c)
+{
+
+  while ((*SCFSR & (1 << 5)/*TDFE*/) == 0)
+    ;
+  *SCFTDR = c;
+  *SCFSR &= ~((1 << 5)/*TDFE*/ | (1 << 6)/*TEND*/);
+  while ((*SCFSR & (1 << 6)/*TEND*/) == 0)
+    ;
+}
+
+ここまで用意すれば
+
+void
+startup ()
+{
+  //  int8_t isci_getc (void);
+
+  boot_console_init (TRUE);
+  iprintf ("ohayo\n");
+
+  led (dip_switch ());
+
+  // 単純なエコーバックのテスト
+  //  while (1)
+  //    iputc (isci_getc (), SERIAL);
+
+  shell_init ();
+  shell_set_device (SERIAL, SERIAL, TRUE);
+  shell_prompt ();
+  // NOTREACHED
+}
+
+簡単なコマンドランチャーまで。
+
+
+U-Boot 2008.10-rc2-00002-g87b4ef5-dirty (Sep 18 2008 - 15:01:39)
+
+CPU: SH4
+BOARD: Renesas Technology Corp. R0P7785LC0011RL
+DRAM:  128MB
+FLASH: 64MB
+*** Warning - bad CRC, using default environment
+
+PCI: SH7780 PCI host bridge found.
+PCI:   Bus Dev VenId DevId Class Int
+        00  00  10ec  8169  0200  00
+        00  01  1095  3512  0180  00
+In:    serial
+Out:   serial
+Err:   serial
+Net:   RTL8169#0
+=> bootp
+BOOTP broadcast 1
+Using RTL8169#0 device
+TFTP from server 192.168.33.2; our IP address is 192.168.33.12
+Filename 'sh7785.img'.
+Load address: 0x9000000
+Loading: #
+done
+Bytes transferred = 7616 (1dc0 hex)
+=> go 0xa9000000
+## Starting application at 0xA9000000 ...
+ohayo
+mon> 
+mon> help       
+avaliable command: help reset 
+mon> 

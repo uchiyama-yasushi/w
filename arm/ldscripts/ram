@@ -1,0 +1,57 @@
+OUTPUT_FORMAT ("elf32-littlearm")
+OUTPUT_ARCH (arm)
+
+/* For program loaded by monitor.  */
+/*
+	-----------------------0x40010000
+	ROM monitor data,bss
+	-----------------------0x4000f800
+
+	Overlay module area.
+
+	-----------------------0x40000200
+			
+	-----------------------0x4000011f	
+	RealMonitor area.
+	-----------------------0x40000040	
+	-----------------------0x40000020
+	Remaped vectors. (MEMMAP 0xe01fc040)
+	-----------------------0x40000000
+*/
+
+MEMORY {
+	vectors	: o = 0x00000000, l = 0x40	/* use MEMMAP. */
+	ram	: o = 0x40000200, l = 0xf600
+}
+
+SECTIONS {
+	 stack_start = 0x4000f800;
+
+	 .vectors :
+	 AT (0x40000000)
+	 {
+	 	 *(.vector)
+	 } > vectors
+
+	 .text :
+	 {
+	 	 *(.text*)
+		 *(.rodata*)
+		 . = ALIGN (4);
+	 } > ram
+
+	 .data :
+	 {
+	 	 data_start = .;
+	 	 *(.data*)
+		 . = ALIGN (4);
+		 data_end = .;
+	 } > ram
+
+	 .bss :
+	 {
+	         bss_start = .;
+	      	 *(.bss*)
+	 } > ram
+	 bss_end = .;
+}

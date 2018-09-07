@@ -1,0 +1,58 @@
+2904 lines transferred in 11 seconds 
+!
+Read 65249 byte. success
+Start address: 0xff3f6e
+SIO@
+peripheral_power: fffdcc (4096) ->1
+stack_start: 0xffc000
+RAM data: 0xff7a90-0xff7afc 108byte
+bss: 0xff7b00-0xff8e8c 5004byte
+VBR: 0xff2000 (0xff2000)
+MCU mode: 6
+DTC: short-address mode
+Internal RAM: enabled
+External bus: enabled
+Instruction fetch: 32bit
+MAC instruction: non-saturation mode
+Interrput Control mode: 2
+PA7 clock output: On
+Input clock: 12000000Hz, MDCLK=0
+System clock: x4 (48000000Hz)
+Peripheral clock: x2 (24000000Hz)
+External clock: x4 (48000000Hz)
+thread_stack_setup: ff801c-ff7c20 (400)
+thread_stack_setup: ff841c-ff8020 (400)
+thread_stack_setup: ff881c-ff8420 (400)
+thread_stack_setup: ff8c1c-ff8820 (400)
+thread_create_no_stack: [2]:uart recv pc=0 (no stack)
+thread_start: [2]
+thread_create_no_stack: [3]:uart send pc=0 (no stack)
+thread_start: [3]
+OHAYO Mar 17 2011 21:16:26 arg=1badface
+user> 
+user> help
+---Monitor---
+W ringbuffer
+        lock : 
+        event: 3(uart send) 
+U ringbuffer
+        lock : 
+        event: 
+---Ready Queue---
+<0>: 
+<1>: 
+<2>: 
+<3>: 1 
+---Thread Status---
+id   pri(used/total)
+[3] W 0 (no stack) uart send
+[2] W 0 (no stack) uart recv
+[1] R 3 (360/1020) root
+---Stack Status---
+  bottom   top     (used/total)
+0 ff801c-ff7c20 (4/1024) 
+1 ff841c-ff8020 (4/1024) 
+2 ff881c-ff8420 (400/1024) 
+3 ff8c1c-ff8820 (316/1024) 
+avaliable command: help reset timer interrupt test 
+user> 

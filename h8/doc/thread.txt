@@ -1,0 +1,36 @@
+の簡単な仕様からはじめました。スケジューリングポリシーは基本的にはITRON に従います。
+
+    * 実行中のスレッドは割り込み以外にプリエンプトされることはない。
+
+    * 割り込みの終了時にスケジューリングが行なわれる。この際に実行中ス
+      レッ ドより高いプライオリティのスレッドがレディキューに入っていな
+      い限り、 実行権を奪われることはない。(rotate ready queueしない)
+
+細かい仕様についてはITRONの仕様に拘らず、作りたいように作ります。
+まずはH8/300Hの命令から。
+
+    * JSR Jump to SubRoutine (PC → @-SP, リターンアドレス→PC) calleeのSPに戻るべきアドレス(JSR命令の次のアドレス)が入る。
+    * RTS ReTurn from Subroutine (@SP+ →PC) SPからPCをとってそこにジャンプ。
+    * RTE ReTurn form Exception (@SP+ →PC, @SP+ →CCR) 例外からのリターンは例外発生時にSPの位置に上位8bitにCCRが、下位24bitに例外発生時のPCが入っているので、それぞれを設定してジャンプする。 
+
+JSRをした時は
+
+  before      after
+|   SP   |  |        |
+|        |  |  PC    | 3
+|        |  |  PC    | 2
+|        |  |  PC    | 1
+|        |  |reserved| 0← SP
+
+MSB 1stなので|res|PC |PC |PC |
+
+例外に入った時は
+
+  before      after
+|   SP   |  |        |
+|        |  |  PC    | 3
+|        |  |  PC    | 2
+|        |  |  PC    | 1
+|        |  |  CCR   | 0← SP
+
+MSB 1stなので|ccr|PC |PC |PC |

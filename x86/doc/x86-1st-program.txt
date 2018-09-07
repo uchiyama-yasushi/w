@@ -1,0 +1,95 @@
+
+----------------------------------------------------------------------
+	.arch i8086
+	.section .text
+	.code16
+	.balign 4
+	cld			/* increment.*/
+	movw	$_test_data, %si
+loop:
+	lodsb
+	cmp	$0,	%al
+	jz	end
+	movb	$0x0e,	%ah
+	movb	$0x00,	%bh
+	movb	$0x07,	%bl
+	int	$0x10
+	jmp	loop
+end:
+	jmp	end
+
+	.balign 4
+	.section .data
+	.global _test_data
+_test_data:
+	.string "ohayo"
+----------------------------------------------------------------------
+
+----------------------------------------------------------------------
+OUTPUT_FORMAT ("binary")
+
+MEMORY
+{
+	mbr_vma		: o = 0x7c00,	l = 0x1fe
+	mbr_lma		: o = 0,	l = 0x1fe
+	signature	: o = 0x1fe,	l = 2
+}
+
+SECTIONS
+{
+	_stack_start = 0xfff0;
+
+	 .text :
+	 {
+	 	 *(.text)
+		 *(.rodata)
+		 . = ALIGN (4);
+	 } > mbr_vma AT > mbr_lma
+
+	 .data :
+	 {
+		 *(.data)
+		 . = ALIGN (4);
+	 } > mbr_vma AT > mbr_lma
+
+	 .bss :
+	 {
+		 *(.bss)
+	 } > mbr_vma AT > mbr_lma
+
+	 .signature :
+	 {
+		SHORT (0xaa55)
+	 }  > signature
+}
+----------------------------------------------------------------------
+
+----------------------------------------------------------------------
+AS	= gcc
+LD	= ld
+OBJCOPY	= objcopy
+OBJDUMP	= objdump
+
+OBJS	= simple_test.o
+PROG	= boot1
+
+.S.o:
+	${AS} ${INCLUDES} ${ASFLAGS} ${DEPEND_UPDATE} -c -o $@ $<
+
+all:	${PROG} check
+
+${PROG}:	${OBJS}
+	${LD} -T mbr.ldscript -o $@  ${OBJS}
+
+clean:
+	-rm -f ${OBJS} ${PROG}
+
+check:
+	${OBJDUMP} -b binary -m i8086 -D ${PROG}
+
+test:
+#	qemu -fda ${PROG}
+#	qemu -nographic -serial stdio -hda ${PROG}
+	qemu  -serial stdio -hda ${PROG}
+# C-a x : exit QEMU
+----------------------------------------------------------------------

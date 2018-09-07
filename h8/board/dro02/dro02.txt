@@ -1,0 +1,13 @@
+caliper data/clock line pullup: PB 0-7
+caliper data : PA 4-7
+caliper clock : P8 0-3
+caliper power : PA 0-3
+
+button [0-7] : P7
+button [8-15] : P2
+
+led cathode common P4 4-6 (encoded)
+led axis 0 P3 0-3 (BCD encoded)
+led axis 1 P3 4-7 (BCD encoded)
+led axis 2 P1 0-3 (BCD encoded)
+led axis 3 P1 4-7 (BCD encoded)

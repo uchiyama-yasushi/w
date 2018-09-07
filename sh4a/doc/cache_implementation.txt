@@ -1,0 +1,326 @@
+メモリマップドのアドレスアレイ、データアレイをアクセスするには、そのコー
+ドがP2(アンキャシュド)で動かさないといけない。カーネルは大概P1(キャッシュ
+ド)で動いている。プログラムの進行とともにP1とP2で移動しないといけない。
+
+そこはこのようにしてみた。一度サブルーチンコールすることで、リターンア
+ドレスをPRに乗せ、それのエリアを変更して、RTSで元に戻す。
+
+FUNC (_cpu_run_P2)
+	sts	pr,	r0
+	mov.l	.L_P2,	r1
+	or	r1,	r0
+	lds	r0,	pr
+	rts
+	 nop
+.L_P2:	.long	0x20000000
+
+FUNC (_cpu_run_P1)
+	sts	pr,	r0
+	mov.l	.L_P1,	r1
+	and	r1,	r0
+	lds	r0,	pr
+	rts
+	 nop
+.L_P1:	.long	0xdfffffff
+
+実際にPCが変化してるかのチェックには
+
+#define	CPU_GET_PC(r)					\
+{							\
+  register uint32_t r0 __asm ("r0");			\
+  __asm volatile ("mova @(0, pc), %0" : "=r"(r0));	\
+  (r) = r0 - 2;						\
+}
+のようにしてPCをとってきて確認。
+
+
+  CPU_GET_PC (r);
+  printf ("PC=%x\n", r);
+  cpu_run_P2 ();
+  CPU_GET_PC (r);
+  printf ("PC=%x\n", r);
+  cpu_run_P1 ();
+  CPU_GET_PC (r);
+  printf ("PC=%x\n", r);
+
+
+test4> test
+Privilege-mode, bank 1, Exception enabled, FPU enabled, IMASK=0x0
+PC=89001176
+PC=a900118e
+PC=890011a2
+fa8cdcff 0 0 0 0
+test4> 
+
+まずCPU全体の設定をする必要がある。
+
+void
+cpu_init ()
+{
+SH4までは物理アドレス29bitなのだけど、SH4Aからは32bitに拡張することがで
+きる。リセット後は29bit。それと同時に物理アドレス空間0-7のバッファドラ
+イトの設定も異なってくる。ここはいずれということで、今回は29bitのまま。
+
+  // 29bit physical address.
+  // CPU doesn't wait for the end of writing bus access and starts
+  // next bus access
+  *PASCR = 0;
+
+特定の命令を実行、エリアをアクセスした時に次の命令をフェッチからやり直
+すかどうかの設定。ここでIRMCRで常に再フェッチという設定ができるのだけど、
+これは今後のSuperHでは保証されない可能性がある。ので使わないようにした。
+(パフォーマンス的にもよくない)となると、各種のレジスタの設定の後にRTE、
+あるいはICBI命令を入れてやらないといけない。
+
+これは
+#define	CPU_SYNC_RESOURCE() __asm volatile ("icbi @%0" :: "r"(0x80000000))
+にした。
+
+  // Don't re-fetch all.
+  *IRMCR = IRMCR_R2 | IRMCR_R1 | IRMCR_LT | IRMCR_MT | IRMCR_MC;
+}
+
+キャッシュの初期化。CCRの設定はP2から行なわないとならず、さらにはキャッ
+シュ領域に戻る前の、おまじない(上のCPU_SYNC_RESOURCE)がいる。
+
+void
+sh7785_cache_init ()
+{
+  // CCR modifications must only be made by program in the P2(uncached) area.
+  cpu_run_P2 ();
+ここで全部のキャッシュを無効化します。しないとマニュアルリセットの場合、
+予想外のものがキャッシュにのってしまう。
+  // Reset cache. invalidate all.
+   *SH7785_CCR |= (CCR_ICI | CCR_OCI);
+
+省電力のために2-wayだけのモードもあるけれど、それは使わない。
+  // I/D-cache 4way, use I-cache way-prediction.
+  *SH7785_RAMCR = 0;
+
+ここでキャッシュを有効にします。P0,P1,P3,U0、全てライトバックに(パフォー
+マンスのため)。
+  // Enable I/D cache, P0,U0,P3 write-back, P1 write-back.
+  *SH7785_CCR = CCR_ICE | CCR_OCE | CCR_CB;
+
+  // After CCR has been updated, execute the ICBI instruction for any address.
+  CPU_SYNC_RESOURCE ();
+  // Return to P1(cacheable) again.
+  cpu_run_P1 ();
+}
+
+それぞれキャッシュの実装。ここからはNetBSDに流用することを考えてインター
+フェースを合わせてある。
+
+まずはデータキャッシュの操作。キャッシュシステムにまかせた操作。MMUを使
+うでここで指定される仮想アドレスはMMUによって変換されることが前提。キャッ
+シュ操作中にTLB例外が起きる。
+
+データキャッシュを書き戻し無効化します。
+void
+sh7785_dcache_wbinv_range (vaddr_t va, vsize_t sz)
+{
+操作する範囲がキャッシュサイズより大きければ無駄なループをすることにな
+るのでキャッシュエントリ全てを操作します。
+  if (sz > SH7785_DCACHE_SIZE)
+    {
+      sh7785_dcache_wbinv_all ();	// Index ops.
+      return;
+    }
+
+指定された仮想アドレスをキャッシュラインサイズで切り捨て、丸めます。し
+なくてもいいけれど、こうした方が見通しがいい。ラインサイズの中のどこで
+も結局ラインサイズで操作されることになるので結果は変わらない。
+
+  vsize_t eva = ROUND_CACHELINE_32 (va + sz);
+  va = TRUNC_CACHELINE_32 (va);
+
+  while (va < eva)
+    {
+      // Hit write-back-invalidate. this may occur TLB miss.
+このラインについて操作。
+      __asm volatile ("ocbp @%0" :: "r"(va));
+次のラインまでスキップします。
+      va += SH7785_CACHE_LINESZ;	// next cache line.
+    }
+バスアクセスの終了を待ちます。
+  __asm volatile ("synco");
+}
+
+データキャッシュを無効化。これはキャッシュドのバッファを用いて機器→
+CPUのDMAをする時に、CPUからデータを取り出す時に必要。書き戻してしまった
+らDMAからのデータが上書きされてしまうからだ。この際、DMAバッファはキャッ
+シュのラインサイズでアラインされてないといけない。アラインされてないと、
+DMAバッファのすぐ横のデータはメモリに書き戻されることなく、捨てられてし
+まうことになる。
+void
+sh7785_dcache_inv_range (vaddr_t va, vsize_t sz)
+{
+  vsize_t eva = ROUND_CACHELINE_32 (va + sz);
+  va = TRUNC_CACHELINE_32 (va);
+
+  while (va < eva)
+    {
+      // Hit invalidate. this may occur TLB miss.
+      __asm volatile ("ocbi @%0" :: "r"(va));
+      va += SH7785_CACHE_LINESZ;	// next cache line.
+    }
+バスアクセスがないから終了はいりません。
+}
+
+データキャッシュの書き戻し。
+void
+sh7785_dcache_wb_range (vaddr_t va, vsize_t sz)
+{
+  vsize_t eva = ROUND_CACHELINE_32 (va + sz);
+  va = TRUNC_CACHELINE_32 (va);
+
+  while (va < eva)
+    {
+      // Hit write-back. this may occur TLB miss.
+      __asm volatile ("ocbwb @%0" :: "r"(va));
+      va += SH7785_CACHE_LINESZ;	// next cache line.
+    }
+  __asm volatile ("synco"); ここはバスアクセスがあります。
+}
+
+次はインデックス操作。皆殺し方。TLB例外が起きないのと、現在のアドレスマッ
+プによらないのがこの操作の使い所。
+
+void
+sh7785_dcache_wbinv_range_index (vaddr_t va, vsize_t sz)
+{
+メモリマップドのアドレスアレイ、データアレイを使うにはP2に。
+  cpu_run_P2 ();
+  vsize_t eva = ROUND_CACHELINE_32 (va + sz);
+  va = TRUNC_CACHELINE_32 (va);
+
+  if (sz > SH7785_DCACHE_SIZE)
+    {
+      sh7785_dcache_wbinv_all ();	// Index ops.
+      return;
+    }
+
+  while (va < eva)
+    {
+指定された仮想アドレスからアレイの場所を指定します。現在のアドレスマッ
+プによらないことを期待した関数なので、連想なし。
+      uint32_t addr = SH7785_CCDA | (va & (CCIA_ENTRY_MASK << CCIA_ENTRY_SHIFT));
+
+このエントリの全てのウェイに操作。
+      *(volatile uint32_t *)(addr | 0) &= ~(CCDA_U | CCDA_V);
+      *(volatile uint32_t *)(addr | (1 << CCIA_WAY_SHIFT)) &= ~(CCDA_U | CCDA_V);
+      *(volatile uint32_t *)(addr | (2 << CCIA_WAY_SHIFT)) &= ~(CCDA_U | CCDA_V);
+      *(volatile uint32_t *)(addr | (3 << CCIA_WAY_SHIFT)) &= ~(CCDA_U | CCDA_V);
+      va += SH7785_CACHE_LINESZ;
+    }
+
+メモリマップドのアドレスアレイ、データアレイの操作の終了にはこれらが必要。
+  CPU_SYNC_RESOURCE ();
+  cpu_run_P1 ();
+}
+
+
+データキャッシュ全て、書き戻し無効化。これはインデックスで操作した方が
+てっとり早い。
+void
+sh7785_dcache_wbinv_all ()
+{
+  int entry;
+  uint32_t addr;
+
+  // D-cache writeback invalidate.
+  for (entry = 0; entry < SH7785_CACHE_ENTRY; entry++)
+    {
+      // non-associate. clear valid, dirty bit.
+      addr = SH7785_CCDA | (entry << CCDA_ENTRY_SHIFT);
+      // flush all way.
+      *(volatile uint32_t *)(addr | 0) &= ~(CCDA_U | CCDA_V);
+      *(volatile uint32_t *)(addr | (1 << CCDA_WAY_SHIFT)) &= ~(CCDA_U | CCDA_V);
+      *(volatile uint32_t *)(addr | (2 << CCDA_WAY_SHIFT)) &= ~(CCDA_U | CCDA_V);
+      *(volatile uint32_t *)(addr | (3 << CCDA_WAY_SHIFT)) &= ~(CCDA_U | CCDA_V);
+    }
+}
+
+
+命令キャッシュについて。
+
+ここでも全てのI-cacheを無効化するのにはインデックス操作で直接いじります。
+32KBまわすよりいいし、これならTLBミスが起きないのでどのような状況でも使える。
+
+命令キャッシュの操作には全て、それに先じて該当する領域のデータキャッシュ
+を書き戻し無効化する。それはこの操作をするのは、この領域にプログラムを
+データキャッシュを経由して、書きこんで、これからその領域を実行すること
+を期待した操作だから。
+
+void
+sh7785_icache_sync_all ()
+{
+データキャッシュと同じく32KB以上の領域の操作なら直接アドレスアレイを指
+定して操作。
+  // Memory-mapped cache array must be accessed in the P2 area program.
+  cpu_run_P2 ();
+  int entry;
+  uint32_t addr;
+
+  // D-cache writeback invalidate.
+  sh7785_dcache_wbinv_all ();	// Index ops.
+
+  // I-cache invalidate
+  for (entry = 0; entry < SH7785_CACHE_ENTRY; entry++)
+    {
+      addr = SH7785_CCIA | (entry << CCDA_ENTRY_SHIFT);
+      // non-associate. clear valid bit.
+      *(volatile uint32_t *)(addr | 0) &= ~CCIA_V;
+      *(volatile uint32_t *)(addr | (1 << CCIA_WAY_SHIFT)) &= ~CCIA_V;
+      *(volatile uint32_t *)(addr | (2 << CCIA_WAY_SHIFT)) &= ~CCIA_V;
+      *(volatile uint32_t *)(addr | (3 << CCIA_WAY_SHIFT)) &= ~CCIA_V;
+    }
+  CPU_SYNC_RESOURCE ();
+  cpu_run_P1 ();
+}
+
+void
+sh7785_icache_sync_range (vaddr_t va, vsize_t sz)
+{
+  // round/truncate with cache line.
+  vsize_t eva = ROUND_CACHELINE_32 (va + sz);
+  va = TRUNC_CACHELINE_32 (va);
+
+  sh7785_dcache_wbinv_range (va, sz);
+
+  while (va < eva)
+    {
+      // Hit invalidate. this may occur TLB miss.
+      __asm volatile ("icbi @%0" :: "r"(va));
+      va += SH7785_CACHE_LINESZ;	// next cache line.
+    }
+}
+
+void
+sh7785_icache_sync_range_index (vaddr_t va, vsize_t sz)
+{
+  cpu_run_P2 ();
+  vsize_t eva = ROUND_CACHELINE_32 (va + sz);
+  va = TRUNC_CACHELINE_32 (va);
+
+  if (sz > SH7785_ICACHE_SIZE)
+    {
+      sh7785_icache_sync_all ();
+      return;
+    }
+
+  sh7785_dcache_wbinv_range_index (va, sz);
+
+  while (va < eva)
+    {
+      uint32_t addr = SH7785_CCIA | (va & (CCIA_ENTRY_MASK << CCIA_ENTRY_SHIFT));
+      *(volatile uint32_t *)(addr | 0) &= ~CCIA_V;
+      *(volatile uint32_t *)(addr | (1 << CCIA_WAY_SHIFT)) &= ~CCIA_V;
+      *(volatile uint32_t *)(addr | (2 << CCIA_WAY_SHIFT)) &= ~CCIA_V;
+      *(volatile uint32_t *)(addr | (3 << CCIA_WAY_SHIFT)) &= ~CCIA_V;
+      va += SH7785_CACHE_LINESZ;
+    }
+  CPU_SYNC_RESOURCE ();
+  cpu_run_P1 ();
+}
+

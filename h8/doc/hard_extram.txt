@@ -1,0 +1,119 @@
+    * 内蔵RAM,ROMはバス幅16bit 2ステート。内蔵周辺モジュールは3ステート。
+
+    * CS0#-CS3#は対応するI/OポートのDDRで出力を設定、CS4#-CS7#はバスコ
+      ントローラのCSCRで設定。
+
+    * DRAMを接続できるのはエリア3のみ。
+
+    * 8bitアクセス空間ではRD#とHWR#でD8-D15が有効。D0-D7はI/Oポート4に使える。
+
+    * バスサイクルはシステムクロック。1サイクル1ステート。25MHzの場合、
+      1ステート40ns。
+
+    * SRAM(M68AF127BM55)のアクセスタイムは55ns。この55nsは
+
+          o tAVAV Read cycle time(min) 最低でもアドレスを確定させておく時間が55ns
+          o tAVQV Address valid to output valid(Max) データが読み出されるまでにかかる最大の時間
+          o tELQV Chip Enable low to output valid(Max) 上ののOE#をアサートしてからの時間
+          o tPD Chip Enable or UB#/LB# low to power up(Max) CE#がデサートしてからスタンバイモードに入るまでの時間。 
+
+    * 2ステート、ノーウェイトで80nsだと微妙に失敗する時がある。3ステー
+      トノーウェイトで安定。
+
+    * 16bitアクセスにすると奇数番地、偶数番地でHWR,LWRで切り分ける。そ
+      うするとM68AF127BM55を2個使うとそれぞれ半分の64KBしか使えない。
+
+
+H8とSRAM(M68AF127BM55)の配線について。
+
+    * E2->CS, E1#->CS#, W#->WE#, G#->OE#。
+
+    * CS#(E1)とCS(E2)はANDでつながっているので、CSはVcc5Vに7Kでプルアッ
+      プ固定、CS#をH8のCS#に直結する。
+
+    * 8bitアクセスなのでHWRとWE#(W#)を直結。SRAMのDQ0-DQ7をH8のD8-D15に直結。
+    * H8のRD#とOE#(G#)を直結。
+    * アドレスラインはSRAMのA0-A16をH8のA0-A16に直結
+
+    * H8側からのCS#もプルアップしてSRAMに接続。バスステートコントローラ
+      の参考例でプルアップしてる。端子的には最大2mA。5V、1mAで5KΩ、こ
+      こは7KΩにしておきました。(E2のプルアップも)
+
+
+void
+bsc_init ()
+{
+  // MCU Mode 5
+このボードはMCUモード5、1MBのアドレス空間で動作させることを前提としています。
+
+  // Bus width.
+  *BSC_ABWCR = 0xff; // All 8bit. D15-D8. D0-D7 are I/O Port (4)
+
+バス幅の設定。エリア0-7まで全て8bit。内蔵RAM,ROM,デバイスは、この設定に
+よらないので、RAM,ROMは16bit,2ステートでアクセスされる。内蔵デバイスは
+3ステート。拡張したSRAM とLCDが8bitアクセスになる。一つのエリアでも
+16bitになるとD0-D7はI/Oポートとして使えなくなる。この場合D0-D7はI/Oポー
+ト4として使える。
+
+25MHzで動かしているので1ステートは40ns。
+
+  // Access state.
+  *BSC_ASTCR = 0x70;// CS4,5(Ext.RAM) and CS6 LCD are 3 state access.
+
+拡張したSRAM、LCDは3ステートに。3ステートアクセスの場合、さらにWSC(Wait
+State Controler)で追加の待ちのステートを(3まで)入れることができる。
+
+  // WSC programmable wait mode. 3 wait state.
+  *BSC_WCR = 3;
+
+WSCを有効にして、追加ステートは3。これは固定なので、エリアごとに追加ス
+テートを変更することはできない。WCERでWSCを有効にするか、切るかの二択。
+外部端子からのWAIT#は使わない。外部端子を使う(WMS1=1)とした時はポート6
+の設定に注意。
+
+  // CS6(LCD) uses WSC. Ext.RAM don't use wait state.
+  *BSC_WCER = 0x40;
+
+拡張RAMは3ステートアクセス。LCDは3ステートアクセスで、さらにウェイトで
+3ステートに設定(計6ステート)。WCERのいずれかが0になってしまうので、ポー
+ト6の設定に注意。この場合WAIT#を使わなくてもP6-0はWAIT#端子になってしま
+う。
+
+LCDとSRAMでウェイトを変更したいのでしかたがない。SRAMが2ステートで動け
+ば、2ステートの場合はウェイトを入れることがないのでWCERを0xffとして
+WAIT#を空けることができるのだけど...。
+
+  // Bus release disable. BACK#, BREQ# -> Port 6[1:2]
+  *BSC_BRCR = 0;
+
+外部にバス権を明け渡すことはないのでBRLEは0。モード5なのでA21E, A22E,
+A23Eは関係ない。これでBACK#, BREQ#端子が空くのでポート6-1,6-2が使える。
+これはボード内蔵のLEDの二個につながっている。
+
+  // Enable Chip Select output 4-6
+  *BSC_CSCR = 0x70;
+
+拡張SRAM、LCD用のチップセレクト信号を出すように設定。これによって
+PA-4,5,6が供出される。このレジスタによってチップセレクト信号を出力する
+ように設定した場合、この設定が全てに優先されるのでPAのDDRはどう設定して
+も問題ない。
+
+
+  // Set address line (A0-A17) output.
+  P1->DDR = 0xff;
+  P2->DDR = 0xff;
+  P5->DDR = 0x01;	//use A16 only. A17-A19 are I/O port. (3 Push buttons)
+
+P5はアドレスラインの一部をI/Oポートに供出。これは拡張RAM上でプログラム
+を実行する場合、二度と変更できない。P5[1:3]はボード内蔵のプッシュボタン
+につながっている。
+
+  // AS#, RD#, HWR#, LWR#, WAIT#  Don't use external bus.
+  P6->DDR = 0x6;	// BACK#, BREQ# are I/O port. (LED Output)
+
+BACK#, BREQ#を使わないことにしたので、P6-1,2はI/Oポートに使える。WSCの
+設定によって#WAITのP6-0はI/Oポートとして使えない。P6-3:6はモード5に設定
+した場合はAS#, RD#, HWR#, LWR#固定でDDRの設定は効かない。
+
+
+}

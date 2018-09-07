@@ -1,0 +1,19 @@
+all: ram
+
+ROOT_DIR	= ../../../
+
+include ../../mk/7785.mk
+
+KERNOBJS = ${KERN_CORE_OBJS} ${KERN_CONSOLE_OBJS} ${KERN_SHELL_OBJS}	\
+${KERN_DELAY_OBJS} ${KERN_TIMER_OBJS} shell_command.o
+
+CFLAGS += -DDEBUG -DTHREAD_DISABLE -DVM_DISABLE -DSTATIC=
+CFLAGS += -DPROMPT="\"test2> \"" -DPROMPT_BUFFER_SIZE=16 -DPROMPT_HISTORY_CONF=0
+ASFLAGS += -DTHREAD_DISABLE -DVM_DISABLE
+
+OBJS =  entry.o main.o ${KERNOBJS} cpu.o cpu_subr.o interrupt.o cpg.o
+LDSCRIPT = ${LDSCRIPT_DIR}/test.ram
+
+LIBTYPE = MINLIB
+
+include ${MK_DIR}/target.mk

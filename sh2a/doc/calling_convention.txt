@@ -1,0 +1,27 @@
+from gcc-4.3.2/gcc/config/sh/sh.h
+
+
+  /* Renesas saves and restores mac registers on call.  */
+
+/* Standard register usage.  */
+
+/* Register allocation for the Renesas calling convention:
+
+        r0		arg return
+	r1..r3          scratch
+	r4..r7		args in
+	r8..r13		call saved
+	r14		frame pointer/call saved
+	r15		stack pointer
+	ap		arg pointer (doesn't really exist, always eliminated)
+	pr		subroutine return address
+	t               t bit
+	mach		multiply/accumulate result, high part
+	macl		multiply/accumulate result, low part.
+	fpul		fp/int communication register
+	rap		return address pointer register
+	fr0		fp arg return
+	fr1..fr3	scratch floating point registers
+	fr4..fr11	fp args in
+	fr12..fr15	call saved floating point registers  */
+

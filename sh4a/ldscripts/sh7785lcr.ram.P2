@@ -1,0 +1,51 @@
+OUTPUT_FORMAT("elf32-shl")
+OUTPUT_ARCH(sh)
+
+MEMORY
+{
+	ram : o = 0xa9000000, l = 0x10000
+	vector_generic	: o = 0xa9010100, l = 0x300
+	vector_tlbmiss	: o = 0xa9010400, l = 0x200
+	vector_interrupt : o = 0xa9010600, l = 0x1000
+}
+
+SECTIONS
+{
+	 _stack_start = 0xa9010000;
+	 _VBR = 0xa9010000;
+
+	 .vector_generic :
+	 {
+	 	 *(.vector_generic)
+	 } > vector_generic
+	 .vector_tlbmiss :
+	 {
+	 	 *(.vector_tlbmiss)
+	 } > vector_tlbmiss
+	 .vector_interrupt :
+	 {
+	 	 *(.vector_interrupt)
+	 } > vector_interrupt
+
+	.text :
+	{
+		*(.text)
+		 *(.rodata*)
+		 . = ALIGN (4);
+	} > ram
+
+	.data :
+	{
+		_data_start = .;
+		*(.data)
+		 . = ALIGN (4);
+	} > ram
+	_data_end = .;
+
+	.bss :
+	{
+		 _bss_start = . ;
+		*(.bss)
+	} > ram
+	_bss_end = .;
+}

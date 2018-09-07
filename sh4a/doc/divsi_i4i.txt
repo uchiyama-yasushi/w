@@ -1,0 +1,12 @@
+gcc-4.3.2/gcc/config/sh/embed-elf.hより。
+/* While the speed-optimized implementations of udivsi3_i4i / sdivsi3_i4i
+   in libgcc are not available for SH2, the space-optimized ones in
+   libgcc-Os-4-200 are.  Thus, when not optimizing for space, link
+   libgcc-Os-4-200 after libgcc, so that -mdiv=call-table works for -m2.  */
+
+CPUFLAGS	= -m2 -ml
+NEWLIB_DIR	= ${TOOLDIR}/${GNUARCH}/lib/ml/m2
+GCCLIB_DIR	= ${TOOLDIR}/lib/gcc/${GNUARCH}/${GCC_VERSION}/ml/m2
+EXTLIB		= -lgcc-Os-4-200
+
+gcc-Os-4-200をリンクすればよい。

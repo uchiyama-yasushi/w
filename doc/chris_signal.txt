@@ -1,0 +1,898 @@
+From torek@horse.ee.lbl.gov Mon Nov 18 21:42:18 1991
+Newsgroups: comp.unix.programmer,vmsnet.networks.tcp-ip.misc
+Reply-To: torek@horse.ee.lbl.gov (Chris Torek)
+Organization: Lawrence Berkeley Laboratory, Berkeley
+X-Local-Date: Mon, 18 Nov 91 17:13:12 PST
+From: torek@horse.ee.lbl.gov (Chris Torek)
+Subject: Re: BSD signal routines under SYSV
+Date: 19 Nov 91 01:13:12 GMT
+
+In article <7211@sophia.inria.fr> amara@delta.inria.fr (Fethi Amara) writes:
+>Followup-to: amara@sophia.inria.fr
+
+(This does not work, as there is no such newsgroup.)
+
+>... I replaced ... (void) sigsetmask(sigblock(0) & ~(1<<(SIGTSTP-1)));
+[with]
+>{ sigset_t newset;
+>          sigset_t *newset_p;
+>          newset_p = &newset;
+>          sigemptyset(newset_p);
+>          sigaddset(newset_p,SIGTSTP);
+>          (void) sigprocmask(SIG_SETMASK,newset_p, NULL);
+>        }
+>
+>Is this the right way?
+
+No.  The former means:
+
+	Block no additional signals; return those currently blocked.
+	Turn off the bit corresponding to SIGTSTP.
+	Block the result.
+
+This accomplishes the goal: `unblock SIGTSTP only'.  To do this with
+the POSIX signal functions, you should use:
+
+	sigset_t mask;
+
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGTSTP);
+	ret = sigprocmask(SIG_UNBLOCK, &mask, (sigset_t *)NULL);
+
+which means, of course, `unblock SIGTSTP only'.  Note that the old-style
+BSD method races if there are signal handlers that alter the signal mask
+on return (because sigblock(0)---or, better, sigblock((sigmask_t)0), if
+you have a newer 4BSD---gets an answer, and then while we compute that
+minus the SIGTSTP bit, the current mask could change).  Whether this is
+a problem depends on the rest of the code.  There are few, if any, programs
+that return from a handler with a different mask than was in force when
+the signal was taken.  The race can be cured, however, simply by changing
+0 to ~0:
+
+	#ifndef sigmask
+	#define sigmask(sig) (1 << ((sig) - 1))
+	#endif
+
+	(void) sigsetmask(sigblock(~(sigmask_t)0) & ~sigmask(SIGTSTP));
+
+This blocks all signals (except SIGSTOP and SIGKILL, which cannot be
+caught anyway) for the duration of the computation of the new mask.
+(Actually---an even finer point---it blocks them until the new mask is
+actually set.  There are a number of instructions between the call to
+sigsetmask and the actual change, some of which can be interrupted.)
+-- 
+In-Real-Life: Chris Torek, Lawrence Berkeley Lab CSE/EE (+1 510 486 5427)
+Berkeley, CA		Domain:	torek@ee.lbl.gov
+
+From torek@elf.ee.lbl.gov Thu Aug  1 11:47:42 1991
+From: torek@elf.ee.lbl.gov (Chris Torek)
+Newsgroups: comp.unix.internals
+Subject: Re: Reliable signals and strange behavior
+Date: 1 Aug 91 11:29:20 GMT
+Reply-To: torek@elf.ee.lbl.gov (Chris Torek)
+Organization: Lawrence Berkeley Laboratory, Berkeley
+
+In various articles, jfh@rpp386.cactus.org (John F Haugh II) and
+brnstnd@kramden.acf.nyu.edu (Dan Bernstein) argue over whether reliable
+signals are like hardware interrupts, and what hardware interrupts
+are like, and so on.
+
+This is all rather silly, because there is no one thing that hardware
+interrupts are like.
+
+In the old days, when electronic equipment was built out of individual
+7400-series chips and `Low-power Schottkey' was new and exciting (and
+now all the people who remember when computers were built out of
+individual transistors are now going `OLD days?!?', while those who
+remember when they were built out of tubes will ... well, never mind),
+I used to breadboard my own little toys.  (All the other junior high
+school boys were out learning about women or destroying other people's
+property :-) .)  When you build your own latches, you get to see how
+things *really* work.  (Actually, I cheated; I used 74LS373s.)
+
+Anyway, interrupt lines usually come in one of two different flavors.
+There are `edge triggered interrupts' and `level triggered interrupts'.
+
+A level triggered interrupt is essentially just a signal wire.  If the
+line is turned on (we will assume positive logic here), an interrupt is
+pending.  If it is off, an interrupt is not pending.  When the CPU
+gets around to noticing that the line is on, it must:
+
+	0. stop noticing that line;
+	1. figure out who turned it on (there may be several such `who's);
+	2. get them to turn it off;
+	3. start noticing the line again, and return from the interrupt.
+
+An edge triggered interrupt is different.  In this case, when the line
+is off, and then is turned on, an interrupt becomes pending.  The line
+can then turn off or stay on and no one cares.  The CPU need not do
+anything about the interrupt, because it will stay pending forever.  In
+particular, if the line is on, and someone else turns it on, no
+interrupt is generated.  Thus, if the CPU wants to ever get those
+interrupts again, it has ensure that the line will go off.  Often the
+rising edge---the line changing from 0 to 1---sets a bit in a latch,
+and the CPU clears the latch internally when it takes the interrupt.
+In other words, no code is necessary: the logic is wired directly into
+the CPU, and converts the edge into a level, clearing the level
+automatically.  In some of these designs, the CPU does not have a way
+to stop noticing the latch; it simply counts on not getting any more
+rising edges until it tells the interruptor that this is safe---in
+some cases the device simply holds the line high, so that there can
+be no rising edges.  Others remain able to ignore latched bits.
+
+Unix signals do not have rising and falling edges, and they do not have
+`on' and `off' conditions.  (This is less true in some recent Unix
+systems, where you can ask if some signal is pending: i.e., you can
+read the line state.)  The effect, however, is fairly simple.  Some
+entity or entities `generate' signals---in this case, the kill() system
+call, and various operational effects, such as `privileged instruction'
+or `data ready on asynchronous file descriptor'.  When this happens,
+the kernel sets a bit in a word.  At various safe points---mainly just
+before returning to user code---the kernel scans for set bits.  These
+tell it to save the old user program counter (the signal return
+address) and direct the user PC to the user's signal handler.  Exactly
+how this works depends on whether signals are `reliable'.
+
+With reliable signals, the sequence of events is, more or less:
+
+	/* NB: this is simplified to extremes.  Your kernel will vary. */
+	safe_signals = pending_signals & ~blocked_signals;
+	if (safe_signals) {
+		sig = find_bit(safe_signals);
+		if (user_signal_handler[sig] == NONE)
+			core_dump_and_quit();
+		pending_signals &= ~(1 << sig);
+		blocked_signals |= 1 << sig;
+		saved_pc = user_pc;
+		user_pc = user_signal_handler[sig];
+	}
+
+The user code must then tell the kernel when it is done handling the
+signal (using the `sigreturn' system call, or `sigcleanup' in older
+kernels), which does (approximately) this:
+
+	blocked_signals &= ~(1 << sig);
+	user_pc = saved_pc;
+
+and then goes back and checks for more signals.
+
+The old Version 7 Unix signals, which are still in use in every System
+V except System V Release 4, do approximately this:
+
+	if (pending_signals) {
+		sig = find_bit(pending_signals);
+		if (user_signal_handler[sig] == NONE)
+			core_dump_and_quit();
+		pending_signals &= ~(1 << sig);
+		saved_pc = user_pc;
+		user_pc = user_signal_handler[sig];
+		user_signal_handler[sig] = NONE;
+	}
+
+Note that no explicit `sigreturn' call is needed, as the new state
+looks exactly like the old state, except that the signal is now marked
+`not handled', and that can be fixed simply by setting the signal
+handler again (with the usual signal() system call).  But there is one
+little problem.
+
+Suppose the signal generators, whether they are kill() system calls or
+something else, manage to generate another signal before the user
+program manages to call signal() again.  This time, when the kernel
+executes the code above it finds that user_signal_handler[sig] is
+NONE.  We will core dump and/or quit; the user program never has a
+chance to do anything about it.  This is rather like the CPU that has a
+latch (the variable `pending_signals' above) for rising edges (kill()
+calls &c) but counts on devices not to set it again too soon (before
+user code can call signal()).
+
+The choice of `blocking' for reliable signals is deliberately somewhat
+like the ability of CPUs to ignore interrupt signal lines.  This is
+done in different ways on different machines.  Most of them have some
+notion of an `interrupt priority level'.  On the VAX-11, for instance,
+the priority levels are 1 through 31.  Every interrupt line is given
+one of these priorities, and if the current priority recorded in the
+CPU's `ipl' register equals or exceeds the line's priority, any
+interrupt signalled by that line is ignored.
+
+A few machines---certain Z80 systems with externally handled interrupts
+match this second method---have individual `ignore' bits for each line.
+This is exactly what the `blocked_signals' variable above does.  It
+does not quite work as I wrote above, however.  Actually, it looks
+more like this:
+
+	safe_signals = pending_signals & ~blocked_signals;
+	if (safe_signals) {
+		sig = find_bit(safe_signals);
+		if (user_signal_handler[sig] == NONE)
+			core_dump_and_quit();
+		pending_signals &= ~(1 << sig);
+		saved_mask = blocked_signals;
+		blocked_signals |= user_mask[sig] | (1 << sig);
+		saved_pc = user_pc;
+		user_pc = user_signal_handler[sig];
+		<save any other user state that needs saving>;
+	}
+
+This lets any particular signal `automatically' block additional
+signals.  By setting the appropriate bits, you can build your own
+priority scheme---you have nearly complete control.  Sigreturn is
+also somewhat different:
+
+	blocked_signals = new_set;
+	user_pc = saved_pc;
+	<restore any other user state that needs restoring>;
+
+In addition, because the state `saving' is done on a stack, and you
+might be doing something special with your stack, the Berkeley signals
+include the notion of a `signal stack': a special stack to which you
+may be shunted.  This adds more complication, but can usually be
+ignored---you do not get any of this unless you ask for it.
+
+The final code, then, excluding permissions checks and machine-specific
+state, but assuming there are `stack pointer' and `pc' registers, is:
+
+	struct user_signal_info *s = proc->p_signal_info;
+	int oonstack;		/* old `on signal stack' flag */
+	struct sigcontext *sc;	/* context for sigreturn */
+#define	sigmask(sig) (1 << ((sig) - 1))
+
+	proc->p_sig &= ~(1 << sig);
+	saved_mask = proc->p_sigmask;
+	proc->p_sigmask |= s->s_catchmask[sig] | sigmask(sig);
+	/*
+	 * Remember whether we were on the special signal stack.
+	 * Figure out where the new context goes on the user stack,
+	 * switching over to the signal stack if necessary.
+	 */
+	oonstack = s->onstack;
+	if (!oonstack && (s->sigonstack & sigmask(sig))) {
+		sc = (struct sigcontext *)s->sigsp;
+		s->onstack = 1;
+	} else
+		sc = (struct sigcontext *)proc->p_regs[SP];
+	sc--;	/* move down by one sigcontext */
+	sc->sc_onstack = oonstack;
+	sc->sc_mask = saved_mask;
+	sc->sc_sp = proc->p_regs[SP];
+	sc->sc_pc = proc->p_regs[PC];
+	/* save other state here */
+	proc->p_regs[SP] = (int)sc;
+	proc->p_regs[PC] = (int)catcher; /* not actually user function */
+	/* set other state here */
+
+Sigreturn is:
+
+	proc->p_regs[SP] = sc->sc_sp;
+	proc->p_regs[PC] = sc->sc_pc;
+	/* restore other state here */
+	proc->p_signal_info->onstack = sc->sc_onstack;
+	proc->p_sigmask = sc->sc_mask & ~(sigmask(SIGKILL)|sigmask(SIGSTOP));
+
+The kernel uses an extra `trick' to avoid as much work as possible.
+Instead of setting the PC to point directly to the user's function, it
+sets the it to some special `signal trampoline' code---so called
+because signal delivery `bounces off it' to get to user code.  The
+trampoline code calls the user's function, and then when that returns,
+calls sigreturn.  The trampoline code may also save state, such as the
+contents of registers or the condition codes, if this is possible.  (If
+not, this must be done in the `other state' sections above.)  In 4BSD,
+this trampoline code lives in a special place in user space: on the VAX
+and Tahoe, it lives in the `u. area', a read-only region at the top of
+the user stack.  On the HP 680x0 boxes and the SPARC, it currently
+lives at the top of the user stack and can be overwritten.  (This is a
+problem, if relatively minor as yet.)  In SunOS, the trampoline code
+lives somewhere in user space.  This leads to an entirely different
+problem: the kernel cannot find this special code without assistance.
+SunOS binaries wind up making four system calls to set each signal
+action.  This is not terribly efficient, although it does get the job
+done.
+
+That covers everything except one topic.  Under some versions of
+System V, the SIGCLD signal is different.  It cannot be explained
+easily with any of the conventional hardware models.  The simplest
+explanation is some pseudo-code.  We have the same unreliable delivery
+as before, except that the default action is different:
+
+	if (pending_signals) {
+		sig = find_bit(pending_signals);
+		pending_signals &= ~(1 << sig);
+		if (user_signal_handler[sig] == SIG_DFL) {
+			if (sig == SIGCLD)
+				return;
+			core_dump_and_quit();
+		}
+		saved_pc = user_pc;
+		user_pc = user_signal_handler[sig];
+		user_signal_handler[sig] = SIG_DFL;
+	}
+
+but now we add a special case to the signal() system call:
+
+	<set everything up as usual>;
+	if (sig == SIGCLD) {
+		if (action == SIG_DFL)
+			return;
+		if (action == SIG_IGN) {
+			<discard zombie children>;
+			return;
+		}
+		/* must be `action == catch' */
+		if (there are zombie children)
+			psignal(proc, SIGCLD);
+	}
+
+(We also have to add a special case in exit(), to check the current
+setting of SIGCLD, and send SIGCLD or discard the child if necessary.)
+Whenever there is at least one child that needs to be wait()ed for,
+the SIGCLD signal is `regenerated' when you call signal().  This is
+quite different from the reliable signals described above, but it can
+be used to guarantee exactly one SIGCLD per exited child.  The proper
+technique is for the user's SIGCLD handler to:
+
+	a: wait for one child;
+	b: once that succeeds, catch SIGCLD.
+
+Since the action of receiving SIGCLD causes the program to stop
+catching SIGCLD---that is, sets SIGCLD back to SIG_IGN---any exited
+children that happen between the signal delivery and step (b) will
+force step (b) to generate a new SIGCLD.  This will recurse once and we
+will do step (a) again, taking out the next troublemaker; step (b) will
+set things up and possibly recurse again.  When there are no more
+children, all the recursions will return.  Note that if we do step (b)
+first, we will recurse infinitely.  This comes up somewhat frequently
+on the unix.{questions,wizards,internals} newsgroups.
+-- 
+In-Real-Life: Chris Torek, Lawrence Berkeley Lab CSE/EE (+1 415 486 5427)
+Berkeley, CA		Domain:	torek@ee.lbl.gov
+
+From torek@horse.ee.lbl.gov Wed Oct 30 22:52:54 1991
+From: torek@horse.ee.lbl.gov (Chris Torek)
+Newsgroups: comp.unix.internals
+Subject: Re: signal trampoline code
+Date: 31 Oct 91 03:28:09 GMT
+Reply-To: torek@horse.ee.lbl.gov (Chris Torek)
+Organization: Lawrence Berkeley Laboratory, Berkeley
+X-Local-Date: Wed, 30 Oct 91 19:28:09 PST
+
+In article <1828@rust.zso.dec.com> schmitz@rust.zso.dec.com
+(Michael Schmitz) writes:
+>I have noticed that in the OSF MIPS and Multimax signal delivery
+>code that the signal trapoline code is not in the u area, but in
+>the C library.  When signal (or sigaction) is called, the address
+>of the library's trampoline code is passed as another system call
+>argument which is saved by the kernel.  Things are pretty much as
+>in BSD -- the user's PC is set to this address to catch the signal.
+>
+>The Question:  Why does BSD (for the VAX) put the trampoline code 
+>in the u area? That is machine dependent and obviously unnecessary.
+
+It is true that it is machine dependent and unnecessary.  There is
+still a good reason for it, though.
+
+There are two ways to save the user's process context during signal
+delivery, and restore it afterward: a) have the kernel do it; b) have
+the user process do it.  The advantage of approach (a) is that there
+need be no special user code.  The disadvantage is that, since the
+kernel is privileged, it tends to be difficult to do (a) correctly.
+The difficulty level is machine-dependent, but has always been high
+enough to favor approach (b).
+
+The code a user process must use to save and restore its own context
+generally looks like this:
+
+	- save some machine registers on the correct stack;
+	- call the signal handler with several parameters;
+	- reload the registers from the stack;
+	- call the `sigreturn' system call.
+
+The sigreturn system call also takes some parameters, including the
+address(es) to which to return and any registers that could not be
+saved and restored in user code because they are needed for the
+sigreturn call itself.  On the VAX, for instance, the sigreturn system
+call uses the current stack pointer, so the original stack pointer must
+be in the arguments to sigreturn.  These parameters must clearly be set
+up by the kernel.  If they are stored in memory (and they are), the
+kernel thus needs to know where to store them, i.e., the address of the
+`signal stack' and a flag to tell whether the process is already on
+that stack.  (Normally, signals are handled on the single `normal'
+stack, but this is a burden to some runtime systems, so 4BSD provides
+an alternative signal stack, rather like the VAX's hardware interrupt
+stack.  Since this is done in software, it is not machine-dependent,
+beyond the assumption that one or more stacks exist.)  The correct
+stack is thus normally set up by the kernel.  Thus, the approach
+actually used is a mix between (a) and (b): the kernel sets up a
+minimal amount of state, then `bounces off' the user `trampoline' code,
+so that the signal handlers themselves can be ordinary C functions.
+
+In order to reach the user's signal trampoline code, the kernel must
+know where it resides.  If the address is fixed by the kernel, this is
+easy.  This is the approach taken on the VAX: the trampoline code is in
+the u. area, which is readable and executable by user code, and which
+has a fixed address.  Thus, the kernel holds the address of the actual
+user signal handler for each signal, and when delivering a signal,
+calls this `sigtramp' code, passing the address of the user function
+and the arguments to hand to it.  In effect, we have:
+
+	/* in u. area: */
+	dead void sigtramp(void (*f)(int, int, struct sigcontext *),
+	    int sig, int code, struct sigcontext *scp) {
+		(*f)(sig, code, scp);
+		sigreturn(scp);
+		/* if we get here, the user broke *scp; kill the process */
+		asm("halt");
+		/* NOTREACHED */
+	}
+
+(the BSD VAX kernel actually uses a `callg' instruction to call the
+function, saving a few stack operations).
+
+Now suppose that we do not have a readable u. area, as is the case on
+the BSD SPARC kernel.  Here we can use the approach described for the
+OSF MIPS and Multimax kernels.  Calls to signal() (actually sigaction)
+pass to the kernel the address of the sigtramp() code, rather than the
+address of the user's handler.  That is, sigaction is implemented
+something like:
+
+	/* libc sigaction(): massage the parameters and call the
+	   real kernel sigaction(). */
+	int sigaction(int sig, struct sigaction *act, struct sigaction *oact) {
+		int ret;
+		struct sigaction realaction, oldrealaction;
+		extern void __sigtramp(<some arguments>);
+
+		realaction.sa_handler = __sigtramp;
+		<set up the rest of realaction based on *act>;
+		ret = __kernel_sigaction(sig, &realaction, &oldrealaction);
+		<check for errors>;
+		<translate __sigtramp to user functions for returns>;
+		return (ret);
+	}
+
+where __sigtramp() is similar to the one found in the u. area on the VAX.
+Now we have a problem: somehow, we have to go from the call to sigtramp()
+to the actual user's function.  The kernel no longer has this information;
+the kernel has only the address of __sigtramp().
+
+There are two ways to handle this.  We can either change the kernel
+interface to provide the `sigtramp address' and the `handler address',
+or we can do what SunOS does: keep a table in the user process.  That
+is, in sigaction() above, before calling __kernel_sigaction, we have
+to record the user's handler in a table per signal, something like
+(as in SunOS):
+
+	typedef void (*sig_handler)(int sig, int code,
+	    struct sigcontext *scp, char *addr);
+
+(Note that SunOS has here added an additional parameter beyond the
+three found in 4BSD: a mistake; it should be in the sigcontext, as
+should the code have been originally.  The sigcontext structure should
+have been defined as the interface in both directions, rather than
+just in the return direction, as both parts are inherently machine
+dependent and it is wise to encapsulate machine dependencies.)
+
+Unfortunately, if we do what SunOS does, we have a new problem.  The
+signal could be delivered between the time we change the table and the
+time we call __kernel_sigaction.  If, for instance, the old handler ran
+on the regular stack, but the new one runs on the signal stack, we will
+then call the new handler on the regular stack.  The SunOS solution to
+this problem is to use sigblock and sigsetmask to block delivery while
+the status is changing.  This, unfortunately, requires three system
+calls per change.  (SunOS actually makes four system calls, for, as far
+as I know, no good reason.)  That is, we must write:
+
+	#ifdef __GNUC__
+	#define dead volatile
+	#else
+	#define dead /*empty*/
+	#endif
+	extern dead void sigtramp(int, int, struct sigcontext *, char *);
+	typedef void (*sig_handler)(int, int, struct sigcontext *, char *);
+	sig_handler __sigtable[NSIG];
+
+	/* libc sigaction(), probably correct, but untested */
+	int sigaction(int sig, struct sigaction *act, struct sigaction *oact) {
+		int ret, saverr;
+		sigmask_t omask;
+		sig_handler ofun;
+		struct sigaction ra;
+
+		/* verify arguments, as much as possible */
+		if (sig < 1 || sig >= NSIG) {
+			errno = EINVAL;
+			return (-1);
+		}
+		/*
+		 * If we are going to ignore or default the signal, we
+		 * do not need to change the table.  A series of calls
+		 * that set SIG_IGN, followed by nothing further ever,
+		 * is a frequent special case.
+		 *
+		 * If the previous catcher is __sigtramp, the table contents
+		 * must be valid (by definition).
+		 */
+		if (act->sa_handler == SIG_DFL || act->sa_handler == SIG_IGN) {
+			ret = __kernel_sigaction(sig, act, oact);
+			if (ret >= 0 && oact->sa_handler == __sigtramp)
+				oact->sa_handler = __sigtable[sig];
+			return (ret);
+		}
+		/*
+		 * We are going to set a real catcher, so we must block
+		 * occurrences of this signal while we change the table.
+		 * Set ra.ra_mask and ra.ra_flags before blocking, in case
+		 * either access faults.
+		 */
+		ra.ra_mask = act->sa_mask;
+		ra.ra_flags = act->sa_flags;
+		omask = sigblock(sigmask(sig));
+		ofun = __sigtable[sig];
+		__sigtable[sig] = act->sa_handler;
+		ra.ra_handler = __sigtramp;
+		ret = __kernel_sigaction(sig, &ra, oact);
+		if (ret >= 0) {
+			(void) sigsetmask(omask);
+			if (oact->sa_handler == __sigtramp)
+				oact->sa_handler = ofun;
+			return (ret);
+		}
+		/*
+		 * The change failed: restore the table, unblock, and return.
+		 */
+		saverr = errno;
+		__sigtable[sig] = ofun;
+		(void) sigsetmask(omask);
+		errno = saverr;
+		return (ret);
+	}
+
+This argues for one of three things:
+
+ a) changing the real kernel interface to include the function;
+ b) adding a call to tell the kernel where __sigtramp is, and otherwise
+    leaving the kernel interface alone (the C startup would make the new
+    system call before calling main());
+ c) `hiding' sigtramp at a known address, in some way.
+
+In my BSD SPARC kernel, I took approach (c) from the HP-BSD kernel: in
+exec(), we build the trampoline code on the user's stack, above the
+argv and evironment strings.  Unfortunately, for SunOS compatibility I
+had to add kludges to otherwise machine-independent parts of the kernel.
+
+Which, if any, of these various solutions have the OSF people chosen?
+-- 
+In-Real-Life: Chris Torek, Lawrence Berkeley Lab CSE/EE (+1 510 486 5427)
+Berkeley, CA		Domain:	torek@ee.lbl.gov
+
+From torek@elf.ee.lbl.gov Mon Feb 18 11:14:10 1991
+From: torek@elf.ee.lbl.gov (Chris Torek)
+Newsgroups: comp.unix.questions
+Subject: Re: how to suspend a process
+Date: 18 Feb 91 09:51:17 GMT
+Reply-To: torek@elf.ee.lbl.gov (Chris Torek)
+Organization: Lawrence Berkeley Laboratory, Berkeley
+X-Local-Date: Mon, 18 Feb 91 01:51:17 PST
+
+In article <121503@uunet.UU.NET> rbj@uunet.UU.NET (Root Boy Jim) writes:
+>In your handler, you send yourself a SIGSTOP, which you cannot catch.
+>You could also unregister your handler, then send a SIGTSTP.
+
+The second is `better' aesthetically.
+
+Handling stops correctly is actually quite tricky.  When you receive
+a TSTP signal you may assume that all other processes in your process
+group have also received one.  You must therefore not send a second
+TSTP to everyone (kill(0, SIGTSTP)) but rather only to yourself
+(kill(getpid(), SIGTSTP)).
+
+To make the stop `atomic' (i.e., to prevent users with itchy ^Z fingers
+>from stopping you while you are setting up to be stopped) you should
+(a) be using the `Berkeley signal' mechanism (likely to be available,
+if not the default, given that you have SIGTSTP in the first place);
+(b) use code of the form:
+
+	stop_handler()
+	{
+		sigmask_t omask;
+
+		... do cleanup operations ...
+		/*
+		 * SIGTSTP is currently blocked.
+		 * To stop exactly once, send another TSTP in case
+		 * none are pending.  (If one is pending, the kill()
+		 * will still leave exactly one pending.)  Then
+		 * atomically lower the mask and wait for the signal.
+		 *
+		 * Alternatively, we could use the sequence
+		 *	sigsetmask(omask & ~sigmask(SIGTSTP));
+		 *	sigsetmask(omask);
+		 * which would let the signal in (thus stopping)
+		 * then block the signal once we are resumed, but
+		 * one call to sigpause is more efficient.
+		 */
+		omask = sigblock(0);
+		(void) kill(getpid(), SIGTSTP);
+		(void) sigpause(omask & ~sigmask(SIGTSTP));
+		... do setup again ...
+	}
+
+The equivalent sequence of POSIX signal calls is:
+
+	sigset_t none, tmp;
+
+	(void) sigemptyset(&none);
+	(void) sigprocmask(SIG_BLOCK, &none, &tmp);
+	(void) sigdelset(&tmp, SIGTSTP);
+	(void) sigsuspend(&tmp);
+
+If the reason you are catching signals is that you modify a tty state
+(e.g., use CBREAK/not-ICANON mode), you should be careful to pick up
+the new state after the stop.  A number of programs, including `vi',
+assume that the state they got when the first started is still in
+effect, and the sequence:
+
+	% stty erase ^h
+	% vi
+	:stop
+	% stty erase ^_
+	% fg
+	:q
+	%
+
+leaves erase set to ^H rather than ^_.
+-- 
+In-Real-Life: Chris Torek, Lawrence Berkeley Lab EE div (+1 415 486 5427)
+Berkeley, CA		Domain:	torek@ee.lbl.gov
+
+> OSF MIPSとMultimaxのシグナル配送のシグナルトランポリンコードはu領域で
+> はなく、Cライブラリにあることに気付いた。signal(あるいはsigaction)が
+> 呼ばれた時、ライブラリの中のトランポリンコードのアドレスが他のシステ
+> ムコールの引数となって、カーネルに保持される。事はBSDにおいても大体そ
+> んなとこ(訳XXX) ユーザの(ハンドラの)プログラムカウンタがシグナルを捕
+> 捉するためにこのアドレスにセットされる。
+>
+> 質問: 何故BSD(VAX用)はトランポリンコードをu領域に置くのか?それは機種
+> 依存だし明らかに必要ない。
+
+俺	この「他のシステムコール」というのはトランポリンコードの位置を
+俺	設定するだけのの特別なシステムコールと思われる。
+
+機種依存で必要ないのは正しいが、それでも(BSD VAXでトランポリンコードを
+u領域に置くのには)いい理由がある。
+
+シグナル配送の間にユーザプロセスのコンテキストを退避し、その後で復帰さ
+せるのには二つのやり方がある。
+
+a) カーネルがやる。
+b) ユーザプロセスがやる。
+
+a)の方法の利点は特別なユーザコードが必要ないことだ。不利な点はカーネル
+は特権モードなので、正しく動作させるには難しくなりがちなことだ。その難
+しさは機種によるけれど、大体は(b)の方が望ましい。
+
+俺	a)の方法でやるとすれば、まずカーネルはこのプロセス用のアドレス
+俺	空間を設定して、シグナルハンドラ用のスタックを設定してユーザモー
+俺	ドでシグナルハンドラにジャンプする。シグナルハンドラを実行した
+俺	後にもう一度カーネルに戻ってきて、(何故戻ってこないといけないか
+俺	というと、カーネルにしかスイッチフレームがないからだ) そのスイッ
+俺	チフレームでプロセスを再開する。
+
+((b)の実装にしたので)ユーザコードが自プロセスのコンテキストの退避、復帰
+をしなくてはいけなくなった。一般的にこんな感じ
+
+- いくつかのレジスタをしかるべきスタックに退避する。
+- いくつかの引数とともにシグナルハンドラを呼ぶ。
+- レジスタをスタックから復帰させる。
+- "sigreturn"システムコールを呼ぶ。
+
+sigreturnシステムコールもいくつかの引数をとる。それにはどこにリターンす
+るかのアドレスと、ユーザコードで退避/復帰できなかったいくつかのレジスタ
+sigreturn自体が使うのでいくつかのレジスタ(sigreturn自体で使われるので)
+が含まれる
+
+俺	「sigreturnはシグナルが送られたプロセスが以前に中断されたところ
+俺	から実行する。アドレス空間はこのシグナルハンドラのために設定さ
+俺	れた。あとはきっちりスイッチフレームを設定してやれば、そのプロ
+俺	セスにそのまま戻れる。ここでいう操作はスイッチフレームの設定」
+
+例えばVAXではsigreturnシステムコールはその場のスタックを使う。なので元
+の(復帰すべき)スタックポインタをsigreturnの引数として渡してやらないとい
+けない。これらの引数はカーネルによって用意されないといけない。もしそれ
+らがメモリに積まれているなら、カーネルはそれらがどこにあるのかを知る必
+要がある。つまりシグナルスタックとプロセスがそのスタックで実行している
+かを知らせるフラグ。(通常シグナルは一つの'普通な'スタックで処理される。
+しかしこうすることが難しいシステムのために、4BSDでは別のシグナルスタッ
+クを用意することにした。VAXのハードウェア割り込み用のスタックのような。
+
+俺	「sigreturnの引数がスタックに積まれているなら、その場所が分から
+俺	ないといけない。その位置はsigtrampをカーネルが呼び出す時に設定
+俺	したシグナルスタックを設定した場所だ」
+
+これはソフトウェアで実装されるから、スタックがいくつあるかという想定に
+関係なく機種非依存だ。
+
+妥当なスタックはこのようにカーネルによって用意される。なので実際の実装
+は(a)と(b)の中間になる。カーネルは最低限の用意をして、ユーザのトランポ
+リンコードにジャンプする。なのでシグナルハンドラそれ自体は普通のCの関数
+とできる。
+
+ユーザのシグナルトランポリンコードを実行するためにカーネルはそれがどこ
+にあるかを知らないといけない。もしアドレスがカーネルによって固定されて
+いれば、これは簡単だ。VAXはこの方法を採用した。トランポリンコードはユー
+ザから読み込み実行ができるu領域に配置し、そのアドレスは固定だ。
+
+俺	「VAXではこのu領域がユーザスタックの一番上にリードオンリーでマッ
+俺	プされている」
+
+このように、カーネルがそれぞれのシグナルに対するユーザのシグナルハンド
+ラのアドレスを保持していて、シグナルを配送する時は、この'sigtramp'コー
+ドにユーザの関数のアドレスと、それに渡す引数を渡してやる。要するに
+
+	/* in u. area: */
+	dead void sigtramp(void (*f)(int, int, struct sigcontext *),
+	    int sig, int code, struct sigcontext *scp) {
+		(*f)(sig, code, scp);
+		sigreturn(scp);
+		/* if we get here, the user broke *scp; kill the process */
+もしここに来たとしたら、ユーザがシグナルコンテキストを壊した。プロセスを
+終了します。
+		asm("halt");
+		/* NOTREACHED */
+	}
+
+(実際のBSD VAXカーネルでは'callg'命令を使ってスタック操作を低減している)
+
+
+ここでu領域を読みだせないBSD SPARCのような場合を想定しよう。ここでOSF
+MIPSやMutimaxカーネルのやり方が使える。signal()を呼ぶ(実際はsigaction)
+と、カーネルにユーザのハンドラではなく、sigtramp()のアドレスを渡す。
+sigactionはこんな感じで実装する。
+
+	/* libc sigaction(): massage the parameters and call the
+	   real kernel sigaction(). */
+	int sigaction(int sig, struct sigaction *act, struct sigaction *oact) {
+		int ret;
+		struct sigaction realaction, oldrealaction;
+		extern void __sigtramp(<some arguments>);
+
+		realaction.sa_handler = __sigtramp;
+		<残りのrealactionの内容を*actを元に用意します>
+		ret = __kernel_sigaction(sig, &realaction, &oldrealaction);
+		<エラーチェックします>;
+		<__sigtrampの結果をユーザ関数の返り値に合わせて変換します>;
+		return (ret);
+	}
+ここで__sigtramp()はVAXのu領域にあるのと似たようなもの。
+
+俺	「4BSDの場合、シグナルトランポリンコードはユーザエリアの中で固
+俺	定だ。VAX,Tahoeではu領域、それはユーザスタックのてっぺんにリー
+俺	ドオンリーでマップされている。HP680x0とSPARCではユーザスタック
+俺	のてっぺんに書き込んである。SunOSの場合はユーザ空間のどこかにあ
+俺	るという実装。なのでこれはSunOSについて説明している。4BSDであれ
+俺	ばトランポリンコードは固定アドレスなのでカーネルから参照できる」
+
+ここで問題がある。sigtramp()を呼び出してから、なんとかしてユーザのハン
+ドラまで行かないといけない。カーネルはもはやこの情報を持っていない。カー
+ネルは__sigtramp()のアドレスしか持っていない。
+
+これに対処するのに二つの方法がある。
+ 1. カーネルインターフェースをsigtrampのアドレスとハンドラのアドレス両
+方とるようにする。
+ 2. SunOSがやった方法:ユーザプロセスにテーブルを保持しておく。つまり上
+のsigaction()で、__kernel_sigactionを呼ぶ前に、ユーザのハンドラのテーブ
+ル記録しないといけない。(SunOSのように)こんな感じ
+
+typedef void (*sig_handler)(int sig, int code, struct sigcontext *scp,
+char *addr);
+
+(SunOSは上の4BSDでは3つの引数だったのにさらに引数が追加されている。間違
+い。それはsigcontextの中にあるべきでコードは元のままのべきだ。
+sigcontext 構造体は両方向(引数/返り値)のインターフェースとして定義され
+るべきで(返りだけに使うのではなく)、そしてその受け渡し内容は本質的に機
+種依存だ。それは(struct sigcontextという形で)カプセルした方がいいだろう。
+
+不幸にもSunOSがしたようにやるなら、新しい問題がでてくる。テーブルを変更
+し、__kernel_sigactionを呼ぶまでの間にもシグナルは配送され得る。例えば
+もし前のハンドラが通常のスタックで走って、新しいのがシグナルスタックで
+走ったら、新しいハンドラを通常のスタっクで呼ぶことになるだろう。
+
+俺	「ここよくわからない。シグナルハンドラが同時に別のスタックで走
+俺	るような実装なの??? カーネルで設定したシグナルフレームだけだと
+俺	思うのだけど...」
+
+この問題に対するSunOSの解決は、状況を変更する時はsigblockとsigsetmaskを
+使って、シグナルの配送をブロックすることにした。これは、あいにくにも一
+回の変更に3回のシステムコールを必要となる。(SunOSは実際には4つのシステ
+ムコールを作った。知る限り、良い理由はない)
+
+俺	「これが4BSDだとどうなるか。シグナルトランポリンは固定アドレス
+俺	にあるからsigactionから渡す必要はない。そこでトランポリンコード
+俺	ではなくシグナルハンドラを渡せばいい。カーネルに渡った時点でロッ
+俺	クが効くのでこうする必要がないとういうことだろうか?」
+
+なのでこう書かないといけない。
+
+	#ifdef __GNUC__
+	#define dead volatile
+	#else
+	#define dead /*empty*/
+	#endif
+	extern dead void sigtramp(int, int, struct sigcontext *, char *);
+	typedef void (*sig_handler)(int, int, struct sigcontext *, char *);
+	sig_handler __sigtable[NSIG];
+
+	/* libc sigaction(), probably correct, but untested */
+	int sigaction(int sig, struct sigaction *act, struct sigaction *oact) {
+		int ret, saverr;
+		sigmask_t omask;
+		sig_handler ofun;
+		struct sigaction ra;
+
+		/* verify arguments, as much as possible */
+		if (sig < 1 || sig >= NSIG) {
+			errno = EINVAL;
+			return (-1);
+		}
+		/*
+		 * If we are going to ignore or default the signal, we
+		 * do not need to change the table.  A series of calls
+		 * that set SIG_IGN, followed by nothing further ever,
+		 * is a frequent special case.
+		 *
+		 * If the previous catcher is __sigtramp, the table contents
+		 * must be valid (by definition).
+		 */
+		if (act->sa_handler == SIG_DFL || act->sa_handler == SIG_IGN) {
+			ret = __kernel_sigaction(sig, act, oact);
+			if (ret >= 0 && oact->sa_handler == __sigtramp)
+				oact->sa_handler = __sigtable[sig];
+			return (ret);
+		}
+		/*
+		 * We are going to set a real catcher, so we must block
+		 * occurrences of this signal while we change the table.
+		 * Set ra.ra_mask and ra.ra_flags before blocking, in case
+		 * either access faults.
+		 */
+		ra.ra_mask = act->sa_mask;
+		ra.ra_flags = act->sa_flags;
+		omask = sigblock(sigmask(sig));
+		ofun = __sigtable[sig];
+		__sigtable[sig] = act->sa_handler;
+		ra.ra_handler = __sigtramp;
+		ret = __kernel_sigaction(sig, &ra, oact);
+		if (ret >= 0) {
+			(void) sigsetmask(omask);
+			if (oact->sa_handler == __sigtramp)
+				oact->sa_handler = ofun;
+			return (ret);
+		}
+		/*
+		 * The change failed: restore the table, unblock, and return.
+		 */
+		saverr = errno;
+		__sigtable[sig] = ofun;
+		(void) sigsetmask(omask);
+		errno = saverr;
+		return (ret);
+	}
+
+この3つの中の一つを推薦する。
+
+ a) カーネルのインターフェースを関数を含むように変更する。
+ b) どこに__sigtrampがあるかをカーネルに教えるコールを追加し、それ以外
+ のカーネルインターフェースはそのままに。(main()を呼ぶ前に、新しいシス
+ テムコールを呼ぶようにする)
+ c) 何らかの方法で(カーネルに)わかるアドレスにsigtrampを隠す。
+
+俺	a)はシグナルトランポリンとシグナルハンドラを両方渡す
+俺	b)はシグナルトランポリンのコードを教えるシステムコールだけを追加。
+俺	c)例えばスタックのてっぺん固定でシグナルトランポリンを配置
+
+BSD SPARCカーネルでは、HP-BSDで使われている(c)の方法を採用した。exec()
+で、トランポリンコードをユーザスタックに設定する。その場所はargvと環境
+変数のスタックの上だ。あいにくSunOSとの互換性のために、その場しのぎのコー
+ドをカーネルの機種非依存の部分に追加しないといけなかった。
+
+そしてこれらの様々な解決法の中からOSFはどれを選んだ?
+
+

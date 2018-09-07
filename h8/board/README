@@ -1,0 +1,129 @@
+----------------------------------------------------------------------
+H8/3664,3694: 57600bps 8N1, Short SW1 and SW2 for writing flash rom.
+hmon57600:dv=/dev/dty00:br#57600:pa=none:dc:
+
+[sample log of tiny_overlay]
+>> stack_start: 0xffffff80
+ROM data: 0x1920-0x1940
+RAM data: 0xfffffe00-0xfffffe20 32byte
+bss: 0xfffffe20-0xfffffe80 96byte
+NMI return address|CCR: f2a
+H8 Simple Monitor Build Mar 15 2011 21:36:11
+>> l
+Send S-record file.
+~>Local file name? a.mot
+94 lines transferred in 0 seconds 
+!
+Read 1924 byte. success
+Start address: 0xfffff8c8
+load 0xfffff9c2 (NMI)
+load 0xfffff9c2 (TRAPA#0)
+load 0xfffff9c2 (TRAPA#1)
+load 0xfffff9c2 (TRAPA#2)
+load 0xfffff9c2 (TRAPA#3)
+load 0xfffff9c2 (Adress Break)
+load 0xfffff9c2 (Sleep)
+load 0xfffff9c2 (IRQ0)
+load 0xfffff9c2 (IRQ1)
+load 0xfffff9c2 (IRQ2)
+load 0xfffff9c2 (IRQ3)
+load 0xfffff9c2 (Wakeup)
+load 0xfffff8b4 (Timer A)
+load 0xfffff9c2 (reserved20)
+load 0xfffff9c2 (Timer W)
+load 0xfffff9c2 (Timer V)
+load 0xfffff9c2 (SCI3)
+load 0xfffff9c2 (I2C)
+load 0xfffff9c2 (A/D)
+stack_start: 0xfffffe00
+RAM data: 0xfffffa7c-0xfffffa88 12byte
+bss: 0xfffffa88-0xfffffa8a 2byte
+NMI return address|CCR: fffff8e0
+overlay board_main
+overlay module loaded. return to monitor.
+done.
+>> 
+>> help
+>> test ohayo 0 1 2 aaa
+0: test
+1: ohayo
+2: 0
+3: 1
+>> 
+----------------------------------------------------------------------
+H8/3052 ud01
+115200bps 8N1, FWE/SW2 up for writing flash rom.
+
+log of ud01_standalone_fiber. standalone program needs VIRTUAL VECTOR TABLE.
+it is disabled default.
+
+stack_start: 0xfffffffc
+ROM data: 0x6670-0x6c70
+RAM data: 0xffffe000-0xffffe600 1536byte
+bss: 0xffffe600-0xfffffa30 5168byte
+NMI return address|CCR: 4b88
+delay_div=40
+calibrated. delay_div=40
+delay_div=40
+calibrated. delay_div=40
+H8/3052 ud01 Monitor Build Mar 16 2011 20:30:27
+[ VIRTUAL VECTOR TABLE *OFF* ]
+ OFF: overlay module, ON: standalone module.
+>> v
+[ VIRTUAL VECTOR TABLE ON ]
+>> l
+~>Local file name? a.mot
+2316 lines transferred in 4 seconds 
+!
+Read -13515 byte. success
+Start address: 0x3ba2
+stack_start: 0xffffdffc
+RAM data: 0xffffe100-0xffffe138 56byte
+bss: 0xffffe140-0xfffff5a0 5216byte
+NMI return address|CCR: 3bba
+delay_div=120
+calibrated. delay_div=120
+board_main
+>
+>help
+avaliable command: help reset fiber_test 
+>fiber_test
+fiber_create: ffffe95c ffffef88 6e0
+fiber_create: ffffe95c fffff3a4 69a
+fiber_twist: fiber_twist: 2->3
+fiber_twist: fiber_twist: 3->1
+ret1= 390 (390)
+ret2= 44 (44)
+1: 789 (789/999)
+2: 123 (123)
+parent: 456 (456)
+1: 999 (789/999)
+2: 123 (123)
+parent: 456 (456)
+>
+
+
+
+----------------------------------------------------------------------
+aki				akizuki H8/3052 M/B
+common				misc common routines.
+dro01				uch's DRO 01(3052)
+dro01_io			uch's DRO 01 I/O unit.(3694)
+dro01_io_test			uch's DRO 01 I/O unit. overlay module for test.
+dro02				uch's DRO 02(3052)
+h8_monitor			H8/3052 internal RAM monitor.
+h8_overlay			H8/3052 internal RAM monitor overlay sample.
+libaki				akizuki H8/3052 M/B devices.
+libud01				uch's UD01 devices.
+tiny3694_monitor		H8/Tiny 3694(20MHz) monitor
+tiny3664_monitor		H8/Tiny 3664(16MHz) monitor
+tiny_overlay			H8/Tiny monitor overlay sample.(3664)
+tiny_overlay_fiber		H8/Tiny monitor fiber sample.(3664)
+tiny_standalone_thread		H8/Tiny thread sample. (standalone)(3664)
+ud01				uch's UD01 common routines.
+ud01_minkernel			UD01 memory check program
+ud01_mmc			UD01 MMC card test program
+ud01_monitor			UD01 monitor(3052)
+ud01_overlay			UD01 monitor overlay sample.
+ud01_standalone_fiber		fiber test (overlay/standalone)
+ud01_standalone_thread		thread test (overlay/standalone)

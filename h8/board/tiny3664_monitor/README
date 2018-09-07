@@ -1,0 +1,8 @@
+SIO@
+stack_start: 0xffffff80
+ROM data: 0x1964-0x198c
+RAM data: 0xfffffe00-0xfffffe28 40byte
+bss: 0xfffffe28-0xfffffea2 122byte
+NMI return address|CCR: f86
+H8 Simple Monitor Build Mar 18 2011 18:01:19
+>> 

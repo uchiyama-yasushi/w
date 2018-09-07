@@ -1,0 +1,130 @@
+/etc/remote
+
+hmon:dv=/dev/dty00:br#115200:pa=none:dc:
+hmon57600:dv=/dev/dty00:br#57600:pa=none:dc:
+hmon38400:dv=/dev/dty00:br#38400:pa=none:dc:
+hmon19200:dv=/dev/dty00:br#19200:pa=none:dc:
+hmon9600:dv=/dev/dty00:br#9600:pa=none:dc:
+
+H8/Tiny (3664)は57600bps
+H8(3052)は115200bps
+でモニタを作ってある。
+
+[3664]
+SW1,SW2 ショートでブートモード。
+SW1,SW2 オープンで通常モード。
+
+PCとはストレートケーブルで接続する。
+
+ブートモードにし、board/tiny_monitorでgmake all; gmake romwriteでモニタ
+を書きこむ。
+
+通常モードにして57600bpsで接続。
+
+$ tip hmon57600
+connected
+stack_start: 0xff80
+ROM data: 0x16f0-0x170c
+RAM data: 0xfe00-0xfe1c 28byte
+bss: 0xfe1c-0xfe7c 96byte
+NMI return address|CCR: 80000154
+H8 Simple Monitor Build May 25 2009 11:16:34
+>>
+
+board/common/simple_monitor.cを参照。使えるコマンドは'l'コマンドのみ。
+サンプルはboard/tiny_overlayとtiny_overlay_fiber。それぞれtiny_monitor
+のオーバーレイモジュールになるので、先にtiny_monitorを作っておくことと、
+tiny_monitorを作り直したら、オーバーレイもリンクし直すこと。
+
+サンプルのモニタからの実行例。
+
+>> l
+ここでtipの'~>'コマンドでmotファイルをロードする。
+~>Local file name? ../tiny_overlay/tiny_overlay.mot
+98 lines transferred in 0 seconds 
+!
+Read 1990 byte. success
+Start address: 0xf800
+load 0xf93c (NMI)
+load 0xf93c (TRAPA#0)
+load 0xf93c (TRAPA#1)
+load 0xf93c (TRAPA#2)
+load 0xf93c (TRAPA#3)
+load 0xf93c (Adress Break)
+load 0xf93c (Sleep)
+load 0xf93c (IRQ0)
+load 0xf93c (IRQ1)
+load 0xf93c (IRQ2)
+load 0xf93c (IRQ3)
+load 0xf93c (Wakeup)
+load 0xf9e6 (Timer A)
+load 0xf93c (reserved20)
+load 0xf93c (Timer W)
+load 0xf93c (Timer V)
+load 0xf93c (SCI3)
+load 0xf93c (I2C)
+load 0xf93c (A/D)
+stack_start: 0xfe00
+ROM data: 0xfa98-0xfa9e
+RAM data: 0xfa98-0xfa9e 6byte
+bss: 0xfa9e-0xfa9e 0byte
+NMI return address|CCR: f818
+Process mode.
+board_main
+done.
+>> 
+>> ooooo
+
+これはもう一つのサンプル。
+>> l
+~>Local file name? ../tiny_overlay_fiber/tiny_overlay_fiber.mot
+160 lines transferred in 1 second 
+!
+Read 3343 byte. success
+Start address: 0xf800
+load 0xf93c (NMI)
+load 0xf93c (TRAPA#0)
+load 0xf93c (TRAPA#1)
+load 0xf93c (TRAPA#2)
+load 0xf93c (TRAPA#3)
+load 0xf93c (Adress Break)
+load 0xf93c (Sleep)
+load 0xf93c (IRQ0)
+load 0xf93c (IRQ1)
+load 0xf93c (IRQ2)
+load 0xf93c (IRQ3)
+load 0xf93c (Wakeup)
+load 0xf93c (Timer A)
+load 0xf93c (reserved20)
+load 0xf93c (Timer W)
+load 0xf93c (Timer V)
+load 0xf93c (SCI3)
+load 0xf93c (I2C)
+load 0xf93c (A/D)
+stack_start: 0xfe00
+ROM data: 0xfc8c-0xfc92
+RAM data: 0xfc8c-0xfc92 6byte
+bss: 0xfc92-0xfdc8 310byte
+NMI return address|CCR: 136f818
+Process mode.
+board_main
+done.
+>> 
+>> help
+>> fiber_test
+fiber_create: ff28 fd28 fadc
+fiber_create: ff28 fdc0 fa70
+fiber storage=152
+fiber_twist: fiber_twist: 2->3
+fiber_twist: fiber_twist: 3->1
+ret1= 390
+ret2= 44
+fiber_1 start
+fiber_1 return ret = 789
+fiber_2 start
+fiber_2 return ret = 123
+fiber_test return ret=456
+fiber_1 return ret = 999
+fiber_2 return ret = 123
+fiber_test return ret=456
+>> 

@@ -1,0 +1,267 @@
+まずはカーネルモードのみ、レジスタバンク1のみ、多重割込みなしの一番単純
+な実装。コンテキストスイッチするのは割込みのみで例外ではスイッチしない。
+
+例外には3種類ある。フォールト、トラップ、アボートだ。フォールトは例外を
+起こした命令の前で例外処理することで、その命令を実行させるので、コンテ
+キストスイッチしてしてしまったら意味がない。トラップは例外命令を実行し
+て例外処理に入るので、コンテキストスイッチしてもいい。アボートはどうに
+もならないのでそこで終了だ。
+
+割込みの場合は任意の命令と命令の隙間に入る。これはトラップが例外命令の
+後処理をするか、割り込みの後処理をするかの違いくらい。
+
+退避するレジスタはこのように設定した。これは実際の退避ルーチンで、
+mov.l	Rn, @-Rmで退避しやすいよう(mov.l Rn, @Rm+はできない)に
+してみた。
+
+struct reg
+{
+  uint32_t pc;		// 0x
+  uint32_t sr;		// 0x
+  uint32_t pr;		// 0x
+  // caller-saved(gcc) callee-saved(renesas)
+  uint32_t mach;
+  uint32_t macl;
+  // callee-saved
+  uint32_t sp;		// 0x
+  uint32_t r14;		// 0x
+  uint32_t r13;		// 0x
+  uint32_t r12;		// 0x
+  uint32_t r11;		// 0x
+  uint32_t r10;		// 0x
+  uint32_t r9;		// 0x
+  uint32_t r8;		// 0x
+  // caller-saved
+  uint32_t r7;		// 0x
+  uint32_t r6;		// 0x
+  uint32_t r5;		// 0x
+  uint32_t r4;		// 0x
+  uint32_t r3;		// 0x
+  uint32_t r2;		// 0x
+  uint32_t r1;		// 0x
+  uint32_t r0;		// 0x
+} __attribute__((packed));
+
+割り込みハンドラは(VBR+0x600)
+
+
+	.section	.vector_interrupt, "ax"	// "A"llocate. e"X"ecute.
+ここでr15にいきなり退避できるのは、この実装がカーネルモードのみ、バンク
+1 のみと設定しているから。そうでなければどこのスタックを使うか吟味しないと
+いけない。
+	mov.l	r1,	@-r15
+
+ここでcurrent_threadの退避領域にアクセスできるのは、多重割込みを禁止し
+ているから。多重割り込みなら、レジスタはスレッド領域ではなく、スタック
+に退避/復帰、復帰後のコンテキストスイッチなしにしないといけない。
+
+	mov.l	.L_current_thread	r1
+	mov.l	@r1,	r1
+	add	#0x54, 	r1	// sizeof (struct reg)
+
+P0,P3のMMUでアクセス領域なら、ここでTLBミスが発生する可能性がある。ここ
+は例外がブロックされているのでTLBミスが発生すればリセットだ。今回はMMU
+を使わないのでOK。
+
+	mov.l	r0,	@-r1
+	mov	r1,	r0
+	mov.l	@r15+,	r1	// restore R1 and R15
+	mov.l	r1,	@-r0
+	mov.l	r2,	@-r0
+	mov.l	r3,	@-r0
+	mov.l	r4,	@-r0
+	mov.l	r5,	@-r0
+	mov.l	r6,	@-r0
+	mov.l	r7,	@-r0
+	mov.l	r8,	@-r0
+	mov.l	r9,	@-r0
+	mov.l	r10,	@-r0
+	mov.l	r11,	@-r0
+	mov.l	r12,	@-r0
+	mov.l	r13,	@-r0
+	mov.l	r14,	@-r0
+	mov.l	r15,	@-r0
+	sts.l	macl,	@-r0
+	sts.l	mach,	@-r0
+	sts.l	pr,	@-r0
+	stc.l	ssr,	@-r0
+	stc.l	spc,	@-r0
+	// All register saved.
+多重割り込みなしなので、全部の割り込みをブロックするように設定した
+あとに例外を有効に。(この設定の場合、例外はプログラムの間違い以外では
+起こらないので、理論的には有効にする必要はない)
+	// Set IMASK and Clear BL (Disable all interrupt.)
+	stc	sr,	r0
+	mov.l	.L_SR_IMASK,	r1
+	or	r1,	r0
+	mov.l	.L_SR_BL,	r1	// r1 = 0x10000000
+	neg	r1,	r1		// r1 = 0xf0000000
+	add	#-1,	r1		// r1 = 0xefffffff
+	and	r1,	r0
+	ldc	r0,	sr
+
+ここで個別の割り込みハンドラをディスパッチ。
+	mov.l	.L_exception_interrupt	r0
+	jsr	@r0
+	 nop
+
+スレッドのスケジューリング。
+	mov.l	.L_thread_context_switch, r0
+	jsr	@r0
+	 nop
+
+例外をブロックして新しいコンテキストにスイッチ。多重割り込みじゃないので
+本来は例外をブロックしなくてよい。(ここに割り込んでくるものはないので)
+
+	// Block exception
+	stc	sr,	r0
+	mov.l	.L_SR_BL,	r1	// r1 = 0x10000000
+	or	r1,	r0
+	ldc	r0,	sr
+	// Restore all register.
+	mov.l	.L_current_thread	r0
+	mov.l	@r0,	r0
+	ldc.l	@r0+,	spc
+	ldc.l	@r0+,	ssr
+	lds.l	@r0+,	pr
+	lds.l	@r0+,	mach
+	lds.l	@r0+,	macl
+	mov.l	@r0+,	r15
+	mov.l	@r0+,	r14
+	mov.l	@r0+,	r13
+	mov.l	@r0+,	r12
+	mov.l	@r0+,	r11
+	mov.l	@r0+,	r10
+	mov.l	@r0+,	r9
+	mov.l	@r0+,	r8
+	mov.l	@r0+,	r7
+	mov.l	@r0+,	r6
+	mov.l	@r0+,	r5
+	mov.l	@r0+,	r4
+	mov.l	@r0+,	r3
+	mov.l	@r0+,	r2
+	mov.l	@r0+,	r1
+	rte
+	 mov.l	@r0+,	r0
+	.align	2
+.L_current_thread:
+	.long	_current_thread
+.L_exception_interrupt:
+	.long	_exception_interrupt
+.L_SR_IMASK:
+	.long	0xf0
+.L_SR_BL:
+	.long	0x10000000
+.L_thread_context_switch:
+	.long	_thread_context_switch
+
+
+プログラム側から明示的にコンテキストスイッチするのは、caller-savedは
+既にこのdo_thread_switchを呼ぶ前にスタックに退避されているので、それ
+以外を退避するだけでいい。コンテキストスイッチはRTE命令でするので、
+スイッチした後はPCとSRをSPC,SSRに設定し、これをRTE命令で戻してもらう。
+
+
+	/* void do_thread_switch (void) */
+	/* Assume already interrupt disabled */
+	/* Called from thread context */
+FUNC (_do_thread_switch)
+	mov.l	.L_current_thread	r0
+	mov.l	@r0,	r0
+	add	#0x34,	r0	// skip caller saved.
+	// Save callee-saved registers.
+	mov.l	r8,	@-r0
+	mov.l	r9,	@-r0
+	mov.l	r10,	@-r0
+	mov.l	r11,	@-r0
+	mov.l	r12,	@-r0
+	mov.l	r13,	@-r0
+	mov.l	r14,	@-r0
+	mov.l	r15,	@-r0
+	sts.l	macl,	@-r0
+	sts.l	mach,	@-r0
+	sts.l	pr,	@-r0
+	stc.l	sr,	@-r0
+	sts.l	pr,	@-r0	// PC
+
+	mov.l	.L_thread_context_switch	r0
+	jsr	@r0
+	 nop
+
+ここでコンテキストスイッチされたものは割り込みでスイッチされたものかも
+しれないので、全レジスタを復帰する。ここで例外をブロックする必要も本当
+はないのも前述の通り。
+	// Block exception
+	stc	sr,	r0
+	mov.l	.L_SR_BL,	r1	// r1 = 0x10000000
+	or	r1,	r0
+	ldc	r0,	sr
+	// Restore all register.
+	mov.l	.L_current_thread	r0
+	mov.l	@r0,	r0
+	ldc.l	@r0+,	spc
+	ldc.l	@r0+,	ssr
+	lds.l	@r0+,	pr
+	lds.l	@r0+,	mach
+	lds.l	@r0+,	macl
+	mov.l	@r0+,	r15
+	mov.l	@r0+,	r14
+	mov.l	@r0+,	r13
+	mov.l	@r0+,	r12
+	mov.l	@r0+,	r11
+	mov.l	@r0+,	r10
+	mov.l	@r0+,	r9
+	mov.l	@r0+,	r8
+	mov.l	@r0+,	r7
+	mov.l	@r0+,	r6
+	mov.l	@r0+,	r5
+	mov.l	@r0+,	r4
+	mov.l	@r0+,	r3
+	mov.l	@r0+,	r2
+	mov.l	@r0+,	r1
+	rte
+	 mov.l	@r0+,	r0
+
+	.align	2
+.L_current_thread:
+	.long	_current_thread
+.L_thread_context_switch:
+	.long	_thread_context_switch
+.L_SR_BL:
+	.long	0x10000000
+
+
+タイマ割り込みでスレッド切り替えのテスト。
+
+## Starting application at 0xA9000000 ...
+RAM data: 0xa9003a7c-0xa9003eec 1136byte
+bss: 0xa9003eec-0xa900510c 4640byte
+ohayo
+Privilege-mode, bank 1, Exception disabled, FPU enabled, IMASK=0xf
+md_thread_setup: [1] a90048c0-a90044c0 {a9004444}
+INTC: fffffffe 1f000000
+md_thread_setup: [2] a9004444-a9004044 {a9003fc8}
+md_thread_create: [2]:test pc=a900023c sp=a9004444 stack=1024byte
+thread_start: [2]
+thread_priority: [1] pri 1->3 state = 0 (DOWN)
+thread_context_switch: {a9004444}: sp=a9004874
+thread_context_switch: switch 1->2: sp=a9004444 pc=a900023c
+test_thread:1234abcd
+hello 0
+thread_context_switch: {a9003fc8}: sp=a9004410
+thread_context_switch: switch 2->1: sp=a9004874 pc=a9001a44
+mon> timer
+mon> a900018c b0
+tmu0_intr
+thread_context_switch: {a9004444}: sp=a9004884
+thread_context_switch: 1 preempted by 2
+thread_context_switch: switch 1->2: sp=a9004410 pc=a9001caa
+hello 1
+thread_context_switch: {a9003fc8}: sp=a9004410
+thread_context_switch: switch 2->1: sp=a9004884 pc=a9000900
+a900018c b0
+tmu0_intr
+thread_context_switch: {a9004444}: sp=a9004884
+thread_context_switch: 1 preempted by 2
+thread_context_switch: switch 1->2: sp=a9004410 pc=a9001caa
+hello 2

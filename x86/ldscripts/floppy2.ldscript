@@ -1,0 +1,38 @@
+/*OUTPUT_FORMAT ("binary")*/
+OUTPUT_FORMAT ("elf32-i386")
+
+MEMORY
+{
+	/* head 0 [3-18] total 16 sector (8KB) */
+/*	loader_vma	: o = 0x8000,	l = 0x2000*/
+	/* head 0 [3-18] head 1[1-18] total 34 sector (17KB) */
+	loader_vma	: o = 0x8000,	l = 0x4400
+
+}
+
+SECTIONS
+{
+	_stack_start = 0xfff0;
+
+	 .text :
+	 {
+	 	 *(.text)
+		 *(.rodata*)
+		 . = ALIGN (4);
+	 } > loader_vma
+
+	 .data  :
+	 {
+	 	 data_start = .;
+		 *(.data)
+		 . = ALIGN (4);
+		 data_end = .;
+	 } > loader_vma
+
+	 .bss  :
+	 {
+	         bss_start = .;
+		 *(.bss)
+	 } > loader_vma
+	bss_end = .;
+}

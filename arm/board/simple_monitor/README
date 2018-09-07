@@ -1,0 +1,54 @@
+$ gmake romwrite
+PROGRAM=ROM_MONITOR gmake build
+gmake[1]: Entering directory `/usr/home/uch/os/w/arm/board/simple_monitor'
+gmake[1]: Nothing to be done for `build'.
+gmake[1]: Leaving directory `/usr/home/uch/os/w/arm/board/simple_monitor'
+gmake all -C ../../..//arm/lpc23xxwrite
+gmake[1]: Entering directory `/usr/home/uch/os/w/arm/lpc23xxwrite'
+gmake[1]: Nothing to be done for `all'.
+gmake[1]: Leaving directory `/usr/home/uch/os/w/arm/lpc23xxwrite'
+../../..//arm/lpc23xxwrite/lpc23xxwrite -d /dev/dtyU0 -f 16000 -s 230400 simple_monitor.bin
+Output Device [ /dev/dtyU0 230400]
+LPC23xx ISP Frequency [16000kHz]
+Send file [simple_monitor.bin]: 13288 byte
+Baudrate synchronized.
+Frequency 16000 KHz
+echo off
+U 23130 done.
+P 0 3 done.
+E 0 3 done.
+W 1073742336 4096 done.
+0x0: sector 0x0 offset 0x0
+P 0 0 done.
+C 0 1073742336 4096 done.
+W 1073742336 4096 done.
+0x1000: sector 0x1 offset 0x0
+P 1 1 done.
+C 4096 1073742336 4096 done.
+W 1073742336 4096 done.
+0x2000: sector 0x2 offset 0x0
+P 2 2 done.
+C 8192 1073742336 4096 done.
+W 1073742336 1000 done.
+0x3000: sector 0x3 offset 0x0
+P 3 3 done.
+C 12288 1073742336 1024 done.
+echo on
+Success.
+$ 
+230400bps 8N1
+
+mon> stack_start: 0x40010000
+ROM data: 0x3634-0x369c
+RAM data: 0x4000f800-0x4000f868 104byte
+bss: 0x4000f868-0x4000f948 224byte
+current stack=0x4000fff8
+Clock: IRC, PLL NOT connected, PLL MSEL:0 NSEL:0, CCLKCFG 0
+Clock: MAIN, PLL connected, PLL MSEL:11 NSEL:0, CCLKCFG 3
+sysclock:288000000Hz cpuclock:72000000Hz
+PCLK0: 0, PCLK1: 0 PCONP: 4280ffe
+calibrated. delay_parm=11
+bss RAM check passed.
+Checking RAM 40000000-4000f800
+LPC2388 Simple Monitor Build Mar 10 2011 19:38:37
+mon> 

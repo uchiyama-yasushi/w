@@ -1,0 +1,22 @@
+OUTPUT_FORMAT ("elf32-h8300")
+OUTPUT_ARCH (h8300:h8300sx)
+
+MEMORY {
+	start_vector	: o = 0x000000, l = 0x4
+	rom		: o = 0x000100, l = 0x7ff00	/* 512KB */
+}
+
+SECTIONS {
+	 _stack_start = 0xffc000;
+	 .start_vector :
+	 {
+	 	 *(.vector)
+	 } > start_vector
+
+	 .text :
+	 {
+		*(.text*)
+		*(.rodata*)
+		 . = ALIGN (4);
+	 } > rom
+}

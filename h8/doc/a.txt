@@ -1,0 +1,7 @@
+delay.h
+
+#define	udelay(n) __delay((n), DELAY_CNT, 125)
+// 125 ... see delay_calibrate@delay.c and __delay@delay_subr.S
+の125がわかりづらい。
+
+userbit_set, clear, getをassert/NMIで使っているのがわかりづらい。

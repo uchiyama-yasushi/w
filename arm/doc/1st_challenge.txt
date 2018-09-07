@@ -1,0 +1,154 @@
+リセットからのブートシーケンスについて。
+ARMは0x0-0x1cにベクタテーブルがある。0x0がリセットベクターで、リセット後は
+ここの命令を実行する。
+
+LPC23XXはリセット後まず内蔵のブートローダが実行される。このブートローダ
+はフラッシュロムの0x7e000からの8KBに格納されている。(なのでユーザが使え
+るのは512-8の504KB)
+
+http://www.standardics.nxp.com/support/documents/microcontrollers/all/?scope=LPC2388&type=user
+
+このブートローダは0x7fffe000にマップされる。ユーザプログラムからこのブート
+ローダの関数を呼ぶにはここを使う。ブートローダもこのアドレスで動く。
+
+さらにこの8KBの下の64Bは0x00000000にマップされる。このマップによってCPUは
+ブートローダのリセットベクタからブートローダに実行を移せる。
+
+リセット時にP2.10ピンがGNDに落ちていれば、強制的にブートローダのISPモードに
+なる。これはホストからフラッシュロムにアクセスするためのモード。
+
+P2.10ピンがプルアップされていた場合、ブートローダのコードはフラッシュロ
+ム上のベクタエリアをチェックし、0x0-0x1cまでの2の補数のチェックサムが0
+になるのであれば、ユーザプログラムと認識して、フラッシュロムの0x0の命令
+を実行する。そうでなければISPモードに移行する。
+
+チェックサムは0x14のARMの予約領域を利用して、ここで調整する。
+
+----------------------------------------------------------------------
+コンパイラはgcc-4.3.2とbinutils-2.18。arm-elfで作成。
+
+----------------------------------------------------------------------
+テストプログラムは、基板上のLEDを点灯。
+// 64KB Local on-chip SRAM. まず単純にRAMを使いたいので直指定。
+#define	RAM	(*(volatile unsigned int *)0x40000000)
+
+これは点滅バージョン
+void
+func0 ()
+{
+
+  *(volatile unsigned int *)0xe01fc1a0 |= 1;	// SYS_SCS
+  *(volatile unsigned int *)0x3fffc020 = 0x40000;
+  *(volatile unsigned int *)0x3fffc030 = 0;
+  while (1)
+    {
+      *(volatile unsigned int *)0x3fffc034 = 0;
+      for (RAM = 0; RAM < 10000; RAM++)
+	;
+      *(volatile unsigned int *)0x3fffc034 = 0x40000;
+      for (RAM = 0; RAM < 10000; RAM++)
+	;
+    }
+}
+
+これは点灯するだけ。
+void
+func1 ()
+{
+  *(volatile unsigned int *)0xe01fc1a0 |= 1;	// SYS_SCS
+  *(volatile unsigned int *)0x3fffc020 = 0x40000;
+  *(volatile unsigned int *)0x3fffc030 = 0;
+  *(volatile unsigned int *)0x3fffc034 = 0;
+  while (1)
+    ;
+}
+
+----------------------------------------------------------------------
+LDSCRITは、
+
+OUTPUT_FORMAT ("elf32-littlearm")
+OUTPUT_ARCH (arm)
+
+MEMORY {
+       start_vector	: o = 0x00000, l = 0x20
+       rom		: o = 0x00200, l = 0x10000
+}
+
+SECTIONS {
+	 .start_vector :
+	 {
+直接B命令を埋め込み。これはどうもうまくELFファイルでロードフラグが
+立てれなかったので強引に。
+(これは.section .vectorとだけ設定していたのが原因。各オプジェクトファイルで
+LOADが立っていなければリンカの段階ではどうにもならない。
+	.section	.vector, "ax"
+として(重要なのは"a" allocate")LOADフラグを立てれば大丈夫)
+
+	 	LONG (ABSOLUTE (0xea00007e))	/* b 200 (func0)*/
+/*	 	LONG (ABSOLUTE (0xea0000b4))*/	/* b 2d8 (func1)*/
+	 } > start_vector
+
+まだスタックもデータもBSSも使えません。
+	 .text :
+	 {
+	 	 *(.text*)
+		 *(.rodata*)
+		 . = ALIGN (4);
+	 } > rom
+}
+
+----------------------------------------------------------------------
+Makefileは
+
+SHELL	= /bin/sh
+TOOLDIR	= /usr/local
+GNUARCH	= arm-elf
+
+PREFIX	= ${TOOLDIR}/bin/${GNUARCH}
+
+AS	= ${PREFIX}-gcc
+CPP	= ${PREFIX}-cpp
+CC	= ${PREFIX}-gcc
+C++	= ${PREFIX}-g++
+LD	= ${PREFIX}-ld
+OBJCOPY	= ${PREFIX}-objcopy
+OBJDUMP	= ${PREFIX}-objdump
+NM	= ${PREFIX}-nm
+AR	= ${PREFIX}-ar
+RANLIB	= ${PREFIX}-ranlib
+
+CFLAGS = -fomit-frame-pointer
+
+DEPEND_DIR	=	.deps
+DEPEND_UPDATE	=	-Wp,-MD,$(DEPEND_DIR)/$(*F).P
+
+
+.c.o:
+	${CC} ${CFLAGS} ${DEPEND_UPDATE} -c -o $@ $<
+.S.o:
+	${AS} ${INCLUDES} ${ASFLAGS} ${DEPEND_UPDATE} -c -o $@ $<
+
+OBJS	= a.o
+
+all:	test
+
+clean:
+	rm -f ${OBJS} test test.elf test.hex
+
+test:	${OBJS}
+	${LD} -T ldscript -o $@.elf  ${OBJS}
+	${OBJCOPY} -Oihex $@.elf $@.hex
+	${OBJDUMP} -x $@.elf
+	${OBJDUMP} -D $@.elf
+
+DEPS_MAGIC := ${shell mkdir ${DEPEND_DIR} > /dev/null 2>&1 || :}
+-include ${DEPEND_DIR}/*.P
+
+----------------------------------------------------------------------
+これでできたhexファイルをWindows VistaからFlash Magicを使って転送。
+http://www.flashmagictool.com/
+このプログラムではベクタ領域のチェックサムを調整していないのだけど、動いた。
+Flash Magicが設定してくれている様子。
+
+一番最初はベクタ領域全部0にしてテストした。これならチェックサムは0、0は
+実質nopになるので本体の0x200までnopが続いて実行になる。

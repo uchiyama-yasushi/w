@@ -1,0 +1,113 @@
+SH4A続き。SH4Aの32bitアドレス拡張モードを試した。R0P7785LC0011RLでは
+S2-5のDIPスイッチで32bitブートができる。
+
+マニュアルではDDR2エリアは29bitモードで(0x08000000-0x0fffffff)、
+32bitモードで(0x40000000-0x5fffffff)になるとなっている。しかしu-bootを
+立ちあげると0x0800000をRAMとして使っていて、それでプログラムもロードし
+実行できてしまう。ここのエリアは32bitモード時はUSBエリアとSDエリアなのに。
+
+u-bootのソースを見るとu-boot/board/sh7785lcr/lowlevel_init.SでPASCRを見
+て32bitモードならUSBとSDエリアのマッピングを変更しているけれど、それ以
+外の部分ではまったく32bitモードへの対応がない。
+
+それでも動いているということは、マニュアルとハードウェアの仕様が違うの
+だろう。
+
+32bitモードでブートした後のPMBの様子を見てみました。
+
+=> go 0x89000000
+## Starting application at 0x89000000 ...
+stack_start: 0x89010000
+RAM data: 0x89006234-0x890066c0 1164byte
+bss: 0x890066c0-0x8900a31c 15452byte
+Privilege-mode, bank 1, Exception disabled, FPU enabled, IMASK=0xf
+bss memory check passed.
+--------------------PMB--------------------
+paddr 32bit mode. これはPASCRの31ビットを見ています。
+VPN:80000000 (V) PPN:0 (V) 512MB, bufferd write, cacheable, write-thru, 
+VPN:a0000000 (V) PPN:0 (V) 512MB, bufferd write, uncacheable, write-back, 
+P1,P2にあたる部分があらかじめ登録されている。(これはCPUがやってくれる)
+P1相当部分がデフォルトではライトスルーなのに注意。32bitモードになると
+CCR.WTは無効になり、キャッシュの設定はPMBのエントリで設定する。
+ここでライトスルーをライトバックに変更してみた。
+
+VPN:8f000000 (-) PPN:35000000 (-) 512MB, bufferd write, cacheable, write-back, 
+VPN:aa000000 (-) PPN:9000000 (-) 16MB, unbufferd write, uncacheable, write-thru, 
+VPN:ae000000 (-) PPN:9d000000 (-) 64MB, bufferd write, uncacheable, write-back, 
+VPN:bf000000 (-) PPN:1000000 (-) 64MB, unbufferd write, cacheable, write-thru, 
+VPN:a7000000 (-) PPN:31000000 (-) 64MB, unbufferd write, uncacheable, write-back, 
+VPN:8e000000 (-) PPN:2b000000 (-) 64MB, unbufferd write, uncacheable, write-thru, 
+VPN:aa000000 (-) PPN:12000000 (-) 64MB, unbufferd write, uncacheable, write-back, 
+VPN:8e000000 (-) PPN:11000000 (-) 64MB, unbufferd write, uncacheable, write-thru, 
+VPN:8f000000 (-) PPN:11000000 (-) 64MB, unbufferd write, cacheable, write-thru, 
+VPN:8b000000 (-) PPN:b5000000 (-) 64MB, bufferd write, uncacheable, write-thru, 
+VPN:a7000000 (-) PPN:75000000 (-) 64MB, unbufferd write, uncacheable, write-thru, 
+VPN:9f000000 (-) PPN:32000000 (-) 64MB, unbufferd write, uncacheable, write-thru, 
+VPN:85000000 (-) PPN:d1000000 (-) 64MB, unbufferd write, uncacheable, write-thru, 
+VPN:8f000000 (-) PPN:11000000 (-) 64MB, unbufferd write, uncacheable, write-thru, 
+cache CCR=101
+md_thread_create: [2]:uart recv pc=89004610 sp=89009de8 stack=1024byte
+thread_start: [2]
+md_thread_create: [3]:uart send pc=890045a0 sp=8900a2c0 stack=1024byte
+thread_start: [3]
+md_thread_create: [4]:test pc=89001788 sp=8900911c stack=1024byte
+thread_start: [4]
+test_thread:1234abcd
+INTC: fffffff6 1f000000
+hello 0
+test4> 
+test4> test
+--------------------PMB--------------------
+paddr 32bit mode.
+VPN:80000000 (V) PPN:0 (V) 512MB, bufferd write, cacheable, write-back, 
+ライトバックに変更されている。
+VPN:a0000000 (V) PPN:0 (V) 512MB, bufferd write, uncacheable, write-back, 
+VPN:ad000000 (-) PPN:35000000 (-) 512MB, bufferd write, cacheable, write-back, 
+VPN:a8000000 (-) PPN:21000000 (-) 16MB, unbufferd write, uncacheable, write-thru, 
+VPN:ae000000 (-) PPN:9d000000 (-) 64MB, bufferd write, uncacheable, write-back, 
+VPN:bd000000 (-) PPN:1000000 (-) 512MB, bufferd write, cacheable, write-thru, 
+VPN:a5000000 (-) PPN:33000000 (-) 64MB, unbufferd write, uncacheable, write-back, 
+VPN:8c000000 (-) PPN:2b000000 (-) 64MB, unbufferd write, uncacheable, write-thru, 
+VPN:a8000000 (-) PPN:52000000 (-) 64MB, unbufferd write, cacheable, write-back, 
+VPN:8c000000 (-) PPN:11000000 (-) 64MB, unbufferd write, uncacheable, write-thru, 
+VPN:8d000000 (-) PPN:37000000 (-) 64MB, unbufferd write, cacheable, write-thru, 
+VPN:89000000 (-) PPN:bd000000 (-) 64MB, bufferd write, uncacheable, write-thru, 
+VPN:a7000000 (-) PPN:75000000 (-) 64MB, unbufferd write, uncacheable, write-thru, 
+VPN:9d000000 (-) PPN:3e000000 (-) 64MB, unbufferd write, uncacheable, write-thru, 
+VPN:85000000 (-) PPN:d1000000 (-) 16MB, unbufferd write, uncacheable, write-thru, 
+VPN:8f000000 (-) PPN:11000000 (-) 64MB, unbufferd write, uncacheable, write-thru, 
+--------------------ITLB--------------------
+VPN:a0000000 ASID:0 (V) PPN:0 (V) PMB 512MB U uncacheable, shared
+VPN:80000000 ASID:0 (V) PPN:0 (V) PMB 512MB U cacheable, shared
+VPN:80000000 ASID:0 (-) PPN:0 (-) PMB 512MB U cacheable, shared
+VPN:a0000000 ASID:0 (-) PPN:0 (-) PMB 512MB U uncacheable, shared
+ITLBにもP1,P2相当のPMBが乗っている。
+
+これをそのまま29bitモードで動かすと、
+test4> test
+--------------------PMB--------------------
+paddr 29bit mode.これはPASCRの31ビットを見ています。
+Buffered write setting: |--------| x:unbuffered write.
+VPN:a1000000 (-) PPN:10000000 (-) 512MB, unbufferd write, cacheable, write-back, 
+VPN:8d000000 (-) PPN:0 (-) 64MB, unbufferd write, uncacheable, write-thru, 
+VPN:af000000 (-) PPN:35000000 (-) 512MB, bufferd write, cacheable, write-back, 
+VPN:aa000000 (-) PPN:21000000 (-) 16MB, unbufferd write, uncacheable, write-thru, 
+VPN:ae000000 (-) PPN:9d000000 (-) 64MB, bufferd write, uncacheable, write-back, 
+VPN:bf000000 (-) PPN:1000000 (-) 512MB, bufferd write, cacheable, write-thru, 
+VPN:a7000000 (-) PPN:33000000 (-) 64MB, unbufferd write, uncacheable, write-back, 
+VPN:8e000000 (-) PPN:2b000000 (-) 64MB, bufferd write, uncacheable, write-thru, 
+VPN:8a000000 (-) PPN:52000000 (-) 64MB, unbufferd write, uncacheable, write-back, 
+VPN:8e000000 (-) PPN:11000000 (-) 64MB, unbufferd write, uncacheable, write-thru, 
+VPN:8f000000 (-) PPN:11000000 (-) 64MB, unbufferd write, cacheable, write-thru, 
+VPN:8b000000 (-) PPN:bd000000 (-) 64MB, bufferd write, uncacheable, write-thru, 
+VPN:a7000000 (-) PPN:75000000 (-) 64MB, bufferd write, uncacheable, write-thru, 
+VPN:9f000000 (-) PPN:3e000000 (-) 64MB, unbufferd write, uncacheable, write-thru, 
+VPN:85000000 (-) PPN:d1000000 (-) 16MB, unbufferd write, uncacheable, write-thru, 
+VPN:8f000000 (-) PPN:11000000 (-) 64MB, bufferd write, uncacheable, write-thru, 
+--------------------ITLB--------------------
+VPN:90e22c00 ASID:33 (-) PPN:d8aef800 (-) PMB 512MB U uncacheable, shared
+VPN:d2a60800 ASID:b1 (-) PPN:e06df400 (-) 64K U cacheable, shared
+VPN:acb79400 ASID:21 (-) PPN:d7be2000 (-) PMB 128MB U uncacheable, shared
+VPN:e086ac00 ASID:25 (-) PPN:e22f6800 (-) 1K U uncacheable, shared
+
+

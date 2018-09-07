@@ -1,0 +1,68 @@
+OUTPUT_FORMAT ("elf32-h8300")
+OUTPUT_ARCH (h8300:h8300h)
+
+/* uch's development machine 01 special */
+
+MEMORY
+{
+	start_vector	: o = 0xfdf10, l = 0x4
+	intvecs		: o = 0xfdf2c, l = 0xd8
+	extram_t	: o = 0x80000, l = 0x20000
+	extram_d	: o = 0xbf000, l = 0x1000
+}
+
+SECTIONS
+{
+	 _stack_start = 0xbfffc;
+
+	 .start_vector :
+	 {
+	 	LONG (ABSOLUTE (start))
+	 } > start_vector
+
+	 .intvecs_vector :
+	 {
+		*(.intvecs_ram)
+	 } > intvecs
+
+	 .intvecs_rom :
+	 {
+		*(.intvecs_rom)
+	 } > extram_t
+
+	 .ctors :
+	 {
+		*(.ctors)
+	 } > extram_t
+
+	 .text :
+	 {
+	 	 *(.text*)
+		 *(.rodata*)
+		 . = ALIGN (4);
+	 } > extram_t
+
+	 _rom_data_start = .;
+	 .data :
+	 AT (ADDR (.text) + SIZEOF (.text))
+	 {
+	 	 _data_start = .;
+		*(.data*)
+		_vector_link_table_start = .;
+		*(.vector_link_table)
+		*(.gcc_except_table*)
+		 . = ALIGN (4);
+		  _data_end = .;
+	 } > extram_d
+	 _rom_data_end = _rom_data_start + SIZEOF (.data);
+
+	 .bss :
+	 {
+	         _bss_start = .;
+	      	 *(.bss*)
+	 } > extram_d
+	_bss_end = .;
+
+	/DISCARD/ : { *(.*debug*) }
+	/DISCARD/ : { *(.comment) }
+}

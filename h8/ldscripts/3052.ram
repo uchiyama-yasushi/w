@@ -1,0 +1,52 @@
+OUTPUT_FORMAT ("elf32-h8300")
+OUTPUT_ARCH (h8300:h8300h)
+
+/* For program loaded by monitor(3052.rom_monitor).  */
+
+MEMORY
+{
+	start_vector	: o = 0xfdf10, l = 0x4
+	intvecs		: o = 0xfdf2c, l = 0xd8
+	ram		: o = 0xfe100, l = 0x1b90
+}
+
+SECTIONS {
+	 _stack_start = 0xffc90;
+
+	 .start_vector :
+	 {
+	 	LONG (ABSOLUTE (start))
+	 } > start_vector
+
+	 .intvecs :
+	 {
+		*(.intvecs)
+	 } > intvecs
+
+	 .text :
+	 {
+	 	 *(.text)
+		 *(.rodata*)
+		 . = ALIGN (4);
+	 } > ram
+
+	 _rom_data_start = .;
+	 .data :
+	 {
+	 	 _data_start = .;
+	 	 *(.data)
+		 . = ALIGN (4);
+		  _data_end = .;
+	 } > ram
+	 _rom_data_end = _rom_data_start + SIZEOF (.data);
+
+	 .bss :
+	 {
+	         _bss_start = .;
+	      	 *(.bss)
+	 } > ram
+	_bss_end = .;
+
+	/DISCARD/ : { *(.*debug*) }
+	/DISCARD/ : { *(.comment) }
+}

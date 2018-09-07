@@ -1,0 +1,169 @@
+[DHCPDの設定]dhcpd.conf
+
+allow bootp;
+allow booting;
+
+host athena {
+        hardware ethernet 00:00:87:6b:bd:6b;
+        fixed-address 192.168.33.12;
+	option host-name "athena";
+        next-server 192.168.33.2;	/* tftpサーバは別なのでそこを設定*/
+	filename "sh7785.img";	/* tftpdのルートからの相対パスで設定する */
+}
+
+[TFTPDの設定]inetd.conf
+
+tftp		dgram	udp	wait	root	/usr/libexec/tftpd	tftpd -l -s /tftpboot
+
+/tftpboot/sh7785.imgははメモリにロードされるイメージそのもの。
+
+[テストプログラム]
+ユーザ開放LEDの三つめを点灯します。
+
+	.align	2
+	.section .text
+	.globl	start
+start:
+1:	mov.l	.L_led, r0
+	mov	#0x4,	r1
+	mov.l	r1,	@r0
+	bra	1b
+	 nop
+	.align	2
+.L_led:
+	.long	0xa4000008
+	// 
+	/* NOTREACHED */
+
+[リンカスクリプト]
+デフォルトで0x09000000にロードされるので、アンキャシュドで0xa9000000で
+動くように設定。
+
+OUTPUT_FORMAT("elf32-shl")
+OUTPUT_ARCH(sh)
+
+MEMORY
+{
+	ram : o = 0xa9000000, l = 0x1000
+}
+
+SECTIONS
+{
+	 _stack_start = 0xa9001000;
+
+	.text :
+	{
+		*(.text)
+		 *(.rodata*)
+		 . = ALIGN (4);
+	} > ram
+
+	.data :
+	{
+		*(.data)
+		 . = ALIGN (4);
+	} > ram
+
+	.bss :
+	{
+		 _bss_start = . ;
+		*(.bss)
+	} > ram
+	_bss_end = .;
+}
+
+
+
+[コンパイル]
+/usr/home/uch/os/w/tools/bin/sh-elf-gcc  -ml -m4a  -Wall -Werror -Wp,-MD,.deps/entry.P -c -o entry.o entry.S
+/usr/home/uch/os/w/tools/bin/sh-elf-ld -T ../../ldscripts/test.ram -o test.elf  entry.o
+/usr/home/uch/os/w/tools/bin/sh-elf-objdump -x test.elf
+
+test.elf:     ?????? elf32-shl
+test.elf
+???????: sh, ??? 0x00000112:
+EXEC_P, HAS_SYMS, D_PAGED
+?????? 0xa9000000
+
+????????:
+    LOAD off    0x00000080 vaddr 0xa9000000 paddr 0xa9000000 align 2**7
+         filesz 0x00000010 memsz 0x00000010 flags r-x
+
+?????:
+???          ???      VMA       LMA       File off  Algn
+  0 .text         00000010  a9000000  a9000000  00000080  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+SYMBOL TABLE:
+a9000000 l    d  .text	00000000 .text
+a9000010 g       .text	00000000 _bss_start
+a9000010 g       *ABS*	00000000 _bss_end
+a9001000 g       *ABS*	00000000 _stack_start
+a9000000 g       .text	00000000 start
+
+
+/usr/home/uch/os/w/tools/bin/sh-elf-objdump -D test.elf
+
+test.elf:     ?????? elf32-shl
+
+????? .text ???????:
+
+a9000000 <start>:
+a9000000:	02 d0       	mov.l	a900000c <start+0xc>,r0	! a4000008
+a9000002:	04 e1       	mov	#4,r1
+a9000004:	12 20       	mov.l	r1,@r0
+a9000006:	fb af       	bra	a9000000 <start>
+a9000008:	09 00       	nop	
+a900000a:	09 00       	nop	
+a900000c:	08 00       	clrt	
+a900000e:	00 a4       	bra	a9000812 <_bss_end+0x802>
+/usr/home/uch/os/w/tools/bin/sh-elf-objcopy -I elf32-shl -O binary test.elf test.bin
+cp test.bin /tftpboot/sh7785.img
+
+[ターゲットで実行]
+U-Boot 2008.10-rc2-00002-g87b4ef5-dirty (Sep 18 2008 - 15:01:39)
+
+CPU: SH4
+BOARD: Renesas Technology Corp. R0P7785LC0011RL
+DRAM:  128MB
+FLASH: 64MB
+*** Warning - bad CRC, using default environment
+
+PCI: SH7780 PCI host bridge found.
+PCI:   Bus Dev VenId DevId Class Int
+        00  00  10ec  8169  0200  00
+        00  01  1095  3512  0180  00
+In:    serial
+Out:   serial
+Err:   serial
+Net:   RTL8169#0
+=> bootp
+BOOTP broadcast 1
+Using RTL8169#0 device
+TFTP from server 192.168.33.2; our IP address is 192.168.33.12
+Filename 'sh7785.img'.
+Load address: 0x9000000
+Loading: #
+done
+Bytes transferred = 16 (10 hex)
+=> md 0xa9000000
+a9000000: e104d002 affb2012 00090009 a4000008    ..... ..........
+a9000010: 00000000 00000000 00000000 00000000    ................
+a9000020: 00000000 00000000 00000000 00000000    ................
+a9000030: 00000000 00000000 00000000 00000000    ................
+a9000040: 00000000 00000000 00000000 00000000    ................
+a9000050: 00000000 00000000 00000000 00000000    ................
+a9000060: 00000000 00000000 00000000 00000000    ................
+a9000070: 00000000 00000000 00000000 00000000    ................
+a9000080: 00000000 00000000 00000000 00000000    ................
+a9000090: 00000000 00000000 00000000 00000000    ................
+a90000a0: 00000000 00000000 00000000 00000000    ................
+a90000b0: 00000000 00000000 00000000 00000000    ................
+a90000c0: 00000000 00000000 00000000 00000000    ................
+a90000d0: 00000000 00000000 00000000 00000000    ................
+a90000e0: 00000000 00000000 00000000 00000000    ................
+a90000f0: 00000000 00000000 00000000 00000000    ................
+=> go 0xa9000000
+## Starting application at 0xA9000000 ...
+
+ここでLEDが点灯して成功。
+

@@ -1,0 +1,54 @@
+user> test
+->lua
+sbrk:base=0x1c03c4d8 size=0
+sbrk:base=0x1c03c4d8 size=1024
+sbrk:base=0x1c03c8d8 size=0
+sbrk:base=0x1c03c8d8 size=1024
+sbrk:base=0x1c03ccd8 size=0
+sbrk:base=0x1c03ccd8 size=1024
+loadlib: 
+sbrk:base=0x1c03d0d8 size=0
+sbrk:base=0x1c03d0d8 size=1024
+sbrk:base=0x1c03d4d8 size=0
+sbrk:base=0x1c03d4d8 size=1024
+sbrk:base=0x1c03d8d8 size=0
+sbrk:base=0x1c03d8d8 size=1024
+loadlib: package
+sbrk:base=0x1c03dcd8 size=0
+sbrk:base=0x1c03dcd8 size=1024
+sbrk:base=0x1c03e0d8 size=0
+sbrk:base=0x1c03e0d8 size=2048
+loadlib: table
+loadlib: io
+sbrk:base=0x1c03e8d8 size=0
+sbrk:base=0x1c03e8d8 size=1024
+sbrk:base=0x1c03ecd8 size=0
+sbrk:base=0x1c03ecd8 size=1024
+loadlib: os
+sbrk:base=0x1c03f0d8 size=0
+sbrk:base=0x1c03f0d8 size=1024
+sbrk:base=0x1c03f4d8 size=0
+sbrk:base=0x1c03f4d8 size=2048
+loadlib: string
+loadlib: debug
+sbrk:base=0x1c03fcd8 size=0
+sbrk:base=0x1c03fcd8 size=1024
+Lua 5.1.4  Copyright (C) 1994-2008 Lua.org, PUC-Rio
+fflush
+> fflush
+
+sbrk:base=0x1c0400d8 size=0
+heap 0x1c03c4d8-0x1c0400d8 (15360), stack 0x1c07fccc-0x1c080400 (1844)
+> fflush
+
+sbrk:base=0x1c0400d8 size=0
+heap 0x1c03c4d8-0x1c0400d8 (15360), stack 0x1c07fccc-0x1c080400 (1844)
+> fflush
+print "hello world"
+sbrk:base=0x1c0400d8 size=0
+sbrk:base=0x1c0400d8 size=1024
+sbrk:base=0x1c0404d8 size=0
+heap 0x1c03c4d8-0x1c0404d8 (16384), stack 0x1c07fa60-0x1c080400 (2464)
+hello world
+> fflush
+

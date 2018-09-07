@@ -1,0 +1,89 @@
+OUTPUT_FORMAT ("elf32-h8300")
+OUTPUT_ARCH (h8300:h8300h)
+
+/* Internal RAM only rom monitor. loaded program -> 3052.ram  */
+
+MEMORY
+{
+	start_vector	: o = 0x00000, l = 0x4
+	intvecs_rom	: o = 0x0001c, l = 0xd8
+	intvecs_ram	: o = 0xfdf2c, l = 0xd8
+	intvecs_link	: o = 0xfe004, l = 0xd8
+	extram		: o = 0xffc90, l = 0x200
+	rom		: o = 0x00100, l = 0x7ff00
+}
+/*
+0xfdf10	--------
+	start vector
+	24byte(free)
+0xfdf2c --------
+	virtual vector table (216byte)
+0xfe004 -------
+	vector link table (216byte)
+0xfe0dc -------
+	36byte(free)
+0xfe100 -------
+
+	user area
+	7056byte (0x1b90)
+
+0xffc90 --------
+	monitor space. (.data+.bss) 512byte
+
+
+0xffe90 --------
+	monitor space  (stack) 128byte
+0xfff10 -------end
+ */
+
+SECTIONS
+{
+	 _stack_start = 0xfff10;
+
+	 .start_vector :
+	 {
+	 	LONG (ABSOLUTE (start))
+	 } > start_vector
+
+	 .intvecs_rom :
+	 {
+		*(.intvecs_rom)
+	 } > intvecs_rom
+
+	 intvecs_link :
+	 AT (.)
+	 {
+		_vector_link_table_start = .;
+		*(.vector_link_table)
+	 } > intvecs_link
+
+	 .text :
+	 {
+	 	 *(.text*)
+		 *(.rodata*)
+		  *(.gcc_except_table*)
+		 . = ALIGN (4);
+	 } > rom
+
+	 _rom_data_start = .;
+	 .data :
+	 AT (ADDR (.text) + SIZEOF (.text))
+	 {
+	 	 _data_start = .;
+	 	 *(.data*)
+		*(.intvecs_ram)
+		 . = ALIGN (4);
+		  _data_end = .;
+	 } > extram
+	 _rom_data_end = _rom_data_start + SIZEOF (.data);
+
+	 .bss :
+	 {
+	         _bss_start = .;
+	      	 *(.bss*)
+	 } > extram
+	_bss_end = .;
+
+	/DISCARD/ : { *(.*debug*) }
+	/DISCARD/ : { *(.comment) }
+}
