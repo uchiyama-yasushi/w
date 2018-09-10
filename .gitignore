@@ -1,3 +1,4 @@
+mk/local_conf.mk
 *~
 *.o
 *.a
