@@ -10,3 +10,14 @@ At 1st, type 'gmake kickstart'. build compiler(gcc) and library(newlib)
 for supported architecture.
 
 /bin/bash is required. (gmp-4.3.2)
+[CHECK OUT REPOSITORY]
+git clone git@github.com:uchiyama-yasushi/w.git
+
+[COMPILE ALL]
+chmod 755 kickstart.sh
+
+[RESTART TOOLCHAIN BUILD]
+cd tools; gmake build
+
+[BUILD TARGET]
+gmake all

@@ -1,0 +1,13 @@
+diff -ur binutils-2.21.orig/bfd/bfdio.c binutils-2.21/bfd/bfdio.c
+--- binutils-2.21.orig/bfd/bfdio.c	2010-06-09 22:28:31.000000000 +0900
++++ binutils-2.21/bfd/bfdio.c	2018-09-08 21:46:28.000000000 +0900
+@@ -577,7 +577,7 @@
+ {
+   struct bfd_in_memory *bim = (struct bfd_in_memory *) abfd->iostream;
+ 
+-  memset (statbuf, 0, sizeof (statbuf));
++  memset (statbuf, 0, sizeof (*statbuf));
+   statbuf->st_size = bim->size;
+ 
+   return 0;
+

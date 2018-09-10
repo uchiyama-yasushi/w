@@ -78,7 +78,14 @@ if [ ! -f $PREFIX/lib/libmpc.a ]
 then
     build $MPC $HOST --with-gmp=$PREFIX
 fi
-
+#
+#########################################
+#
+patch -p0 -E < ../patch/binutils-2.21.patch
+patch -p0 -E < ../patch/gcc-4.6.0.patch
+#
+#########################################
+#
 for GNUARCH in $TARGETS
 do
     echo "Target system: $GNUARCH"
