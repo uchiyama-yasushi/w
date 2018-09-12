@@ -17,3 +17,5 @@ $ git add .
 $ git commit -m 'initial commit'
 $ git remote add github git@github.com:uchiyama-yasushi/w.git
 
+[CHECK OUT REPOSITORY]
+git clone git@github.com:uchiyama-yasushi/w.git
