@@ -1,17 +1,3 @@
-$ git clone git@github.com:uchiyama-yasushi/w.git
-Cloning into 'w'...
-The authenticity of host 'github.com (192.30.255.112)' can't be established.
-RSA key fingerprint is SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8.
-Are you sure you want to continue connecting (yes/no)? yes
-yes
-Warning: Permanently added 'github.com,192.30.255.112' (RSA) to the list of known hosts.
-X11 forwarding request failed on channel 0
-remote: Counting objects: 3, done.        
-remote: Compressing objects: 100% (2/2), done.        
-remote: Total 3 (delta 0), reused 0 (delta 0), pack-reused 0        
-Receiving objects: 100% (3/3), done.
-$ 
-
 [INITIAL COMMIT]
 $ git add .
 $ git commit -m 'initial commit'
